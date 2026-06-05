@@ -52,8 +52,8 @@ const getDirtyFilesFromGit = (cwd?: string) =>
   Effect.gen(function* () {
     yield* Effect.logInfo("[CommandRunner] Gathering dirty files context via git diff...");
     const process = Bun.spawn(["git", "diff", "--name-only"], { cwd });
-    const stdout = await new Response(process.stdout).text();
-    const exitCode = await process.exited;
+    const stdout = yield* Effect.promise(() => new Response(process.stdout).text());
+    const exitCode = yield* Effect.promise(() => process.exited);
     if (exitCode !== 0) return [];
 
     const files = stdout
@@ -66,8 +66,8 @@ const getDirtyFilesFromGit = (cwd?: string) =>
       const filePath = cwd ? `${cwd}/${file}` : file;
       const content = yield* Effect.tryPromise({
         try: () => Bun.file(filePath).text(),
-        catch: () => "",
-      });
+        catch: (e) => new Error(`Failed to read file: ${String(e)}`),
+      }).pipe(Effect.catchAll(() => Effect.succeed("")));
       dirty.push({ filePath: file, content });
     }
     return dirty;
@@ -103,14 +103,14 @@ export const makeCommandRunner = (): CommandRunner => {
 
       if (timer) clearTimeout(timer);
 
-      const stdout = yield* Effect.tryPromise({
+            const stdout = yield* Effect.tryPromise({
         try: () => new Response(process.stdout).text(),
-        catch: () => "",
+        catch: (e) => new Error(`Failed to read stdout: ${String(e)}`),
       });
 
       const stderr = yield* Effect.tryPromise({
         try: () => new Response(process.stderr).text(),
-        catch: () => "",
+        catch: (e) => new Error(`Failed to read stderr: ${String(e)}`),
       });
 
       return {
@@ -125,10 +125,10 @@ export const makeCommandRunner = (): CommandRunner => {
   return {
     run,
 
-    runTypeCheck: (cwd?: string, timeoutMs: number = 30000) =>
+        runTypeCheck: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating type-safety static verification pass...");
-        const result = yield* run(["bun", "x", "tsc", "--noEmit"], { cwd, timeoutMs });
+        const result = yield* run(["bun", "x", "tsc", "--noEmit"], { cwd, timeoutMs: timeoutMs ?? 30000 });
         
         if (result.success) {
           return { success: true, dirtyFiles: [] };
@@ -143,10 +143,10 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-    runTestSuite: (cwd?: string, timeoutMs: number = 45000) =>
+        runTestSuite: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
-        const result = yield* run(["bun", "test"], { cwd, timeoutMs });
+        const result = yield* run(["bun", "test"], { cwd, timeoutMs: timeoutMs ?? 45000 });
 
         if (result.success) {
           return { success: true, dirtyFiles: [] };

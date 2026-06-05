@@ -56,13 +56,13 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         .map((f) => f.trim())
         .filter(Boolean);
 
-      const dirty: DirtyFile[] = [];
+            const dirty: DirtyFile[] = [];
       for (const file of files) {
         const filePath = cwd ? `${cwd}/${file}` : file;
         const content = yield* Effect.tryPromise({
           try: () => Bun.file(filePath).text(),
-          catch: () => "",
-        });
+          catch: (e) => new Error(`Failed to read file: ${String(e)}`),
+        }).pipe(Effect.catchAll(() => Effect.succeed("")));
         dirty.push({ filePath: file, content });
       }
       return dirty;
@@ -122,13 +122,13 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
         const applyCmd = yield* runCommand(["git", "apply", patchFile], cwd);
 
-        yield* Effect.tryPromise({
+                yield* Effect.tryPromise({
           try: async () => {
             const fs = await import("node:fs/promises");
             await fs.unlink(patchPath).catch(() => {});
           },
-          catch: () => {},
-        });
+          catch: (e) => new Error(`Failed to remove patch file: ${String(e)}`),
+        }).pipe(Effect.catchAll(() => Effect.void));
 
         if (applyCmd.exitCode !== 0) {
           yield* Effect.logError(`[WorkspaceController] Git apply failed: ${applyCmd.stderr}`);
