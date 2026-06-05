@@ -23,9 +23,30 @@ export const isPausedSignal = signal<boolean>(false);
 export const activeTxSignal = signal<GitTransaction | null>(null);
 export const errorSignal = signal<string | null>(null);
 
-export const grugTokenState = signal<string>(
-  typeof localStorage !== "undefined" ? localStorage.getItem("grug-token") || "" : ""
-);
+export const grugTokenState = signal<string>("");
+
+export const initializeGrugToken = () => {
+  if (typeof document !== "undefined") {
+    const meta = document.querySelector('meta[name="grug-session-token"]');
+    if (meta) {
+      const token = meta.getAttribute("content") || "";
+      grugTokenState.value = token;
+      meta.remove();
+      if (token && typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-token", token);
+      }
+      console.info("[taskStore] Successfully extracted secure session token from HTML meta and scrubbed element.");
+      return;
+    }
+  }
+  if (typeof localStorage !== "undefined") {
+    grugTokenState.value = localStorage.getItem("grug-token") || "";
+    console.info("[taskStore] Fallback to localStorage for secure session token.");
+  }
+};
+
+// Auto-run on module evaluation to guarantee hydration
+initializeGrugToken();
 
 export const setGrugToken = (token: string) => {
   grugTokenState.value = token;

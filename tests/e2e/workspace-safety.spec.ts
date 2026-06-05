@@ -1,4 +1,4 @@
-import { test, expect } from "./utils/base-test.ts";
+import { test, expect } from "./utils/base-test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { exec } from "node:child_process";
@@ -47,6 +47,56 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
   test.afterEach(async () => {
     // Revert directory safely and remove all testing artifacts
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  test("should reject API requests lacking the valid security token with 401 Unauthorized", async ({ request }) => {
+    const response = await request.post("/api/workspace/init", {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      data: {
+        taskId: "e2e-anonymous-intrusion",
+        cwd: tempDir,
+      },
+    });
+
+    expect(response.status()).toBe(401);
+    const body = await response.json() as { error: string };
+    expect(body.error).toContain("Unauthorized");
+  });
+
+  test("should load the PWA, extract the injected session token dynamically, and run transactions via UI", async ({ page }) => {
+    // 1. Load root page (dynamic meta tag is injected automatically by Elysia)
+    await page.goto("/");
+
+    // 2. Hydrate only workspace scope and login token to bypass gate (grug-token is omitted)
+    await page.evaluate(({ cwd }) => {
+      localStorage.setItem("grug-cwd", cwd);
+      localStorage.setItem("jwt", "mock-auth-jwt");
+    }, { cwd: tempDir });
+
+    // 3. Reload page to initialize UI stores with loopback environment
+    await page.reload();
+
+    // 4. Assert Launch Form successfully mounted
+    const heading = page.locator("grug-task-board h2");
+    await expect(heading).toContainText("Launch Development Session");
+
+    // 5. Fill fields to start a programmatic task transaction
+    await page.fill("input[name='taskId']", "e2e-secure-ui-flow");
+    await page.fill("input[name='targetFiles']", "main.ts");
+    await page.fill("input[name='description']", "Testing dynamic secure handshake");
+
+    await page.click("button[type='submit']");
+
+    // 6. Assert success branch transition (proving token was securely read and mapped)
+    const txHeader = page.locator("grug-task-board h2");
+    await expect(txHeader).toContainText("Workspace Transaction: e2e-secure-ui-flow");
+
+    // 7. Cleanup task transaction cleanly
+    const abortBtn = page.locator("grug-task-board button:has-text('Abort Task')");
+    await abortBtn.click();
+    await expect(heading).toContainText("Launch Development Session");
   });
 
   test("should transaction branch, catch compilation failure, and abort/reset cleanly", async ({ request }) => {

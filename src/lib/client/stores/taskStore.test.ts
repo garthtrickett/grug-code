@@ -9,6 +9,8 @@ import {
   activeTxSignal,
   errorSignal,
   setGrugToken,
+  initializeGrugToken,
+  grugTokenState,
 } from "./taskStore";
 import { hlcStore, hlcSignal } from "./hlcStore";
 
@@ -30,6 +32,18 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(isPausedSignal.value).toBe(false);
     expect(activeTxSignal.value).toBeNull();
     expect(errorSignal.value).toBeNull();
+  });
+
+  it("should securely extract token from meta tag and scrub it from document", () => {
+    const meta = document.createElement("meta");
+    meta.setAttribute("name", "grug-session-token");
+    meta.setAttribute("content", "test-handshake-token-999");
+    document.head.appendChild(meta);
+
+    initializeGrugToken();
+
+    expect(grugTokenState.value).toBe("test-handshake-token-999");
+    expect(document.querySelector('meta[name="grug-session-token"]')).toBeNull();
   });
 
   it("should set up a task queue and branch checkouts programmatically on initTaskQueue", async () => {

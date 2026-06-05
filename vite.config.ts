@@ -1,10 +1,36 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+function injectGrugTokenPlugin() {
+  return {
+    name: "inject-grug-token",
+    transformIndexHtml(html: string) {
+      try {
+        const sessionPath = path.resolve(process.cwd(), ".grug-session.json");
+        if (fs.existsSync(sessionPath)) {
+          const fileContent = fs.readFileSync(sessionPath, "utf-8");
+          const data = JSON.parse(fileContent) as { token?: string };
+          if (data && typeof data === "object" && typeof data.token === "string") {
+            const token = data.token;
+            const metaTag = `<meta name="grug-session-token" content="${token}">`;
+            return html.replace("<head>", `<head>\n    ${metaTag}`);
+          }
+        }
+      } catch (e) {
+        console.warn("[Vite Plugin] Failed to inject grug session token", e);
+      }
+      return html;
+    }
+  };
+}
 
 export default defineConfig(({ command, mode }) => ({
   base: "/",
   plugins: [
+    injectGrugTokenPlugin(),
     tailwindcss(),
     VitePWA({
       strategies: "injectManifest",
@@ -71,7 +97,10 @@ export default defineConfig(({ command, mode }) => ({
       }
     })
   ],
-    server: {
+  server: {
+    watch: {
+      ignored: ["**/.grug-e2e-temp-*/**"]
+    },
     host: true,
     port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
     allowedHosts: true,

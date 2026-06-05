@@ -1,13 +1,18 @@
 import { Effect } from "effect";
 import { runClientUnscoped } from "./lib/client/runtime.ts";
 import { clientLog } from "./lib/client/clientLog.ts";
+import { initializeGrugToken } from "./lib/client/stores/taskStore.ts";
 
 // Register custom elements
 import "./components/layouts/app-shell.ts";
 
 const bootstrapApp = Effect.gen(function* () {
-  yield* clientLog("info", "[Main] Initiating Grug Code bootstrap sequence...");
+  // Extract and scrub security tokens on early page instantiation before any APIs run
+  yield* Effect.sync(() => {
+    initializeGrugToken();
+  });
 
+  yield* clientLog("info", "[Main] Initiating Grug Code bootstrap sequence...");
 
   // 1. Hydrate local HLC state to ensure clock validity during early mutations
   yield* clientLog("info", "[Main] Hydrating local HLC state from IndexedDB...");

@@ -49,6 +49,25 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
     expect(data.error).toContain("Unauthorized");
   });
 
+  it("should reject state-changing requests from non-loopback hosts with 403 Forbidden", async () => {
+    const token = getActiveToken();
+    const response = await app.handle(
+      new Request("http://malicious.com/api/workspace/init", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+          "Host": "malicious.com"
+        },
+        body: JSON.stringify({ taskId: "api-task-id" }),
+      })
+    );
+
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toContain("External request origin or host detected");
+  });
+
   it("should accept requests with the valid token and apply patches natively", async () => {
     const token = getActiveToken();
     

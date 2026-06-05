@@ -10,6 +10,7 @@ import { staticPlugin } from "@elysiajs/static";
 import { effectPlugin } from "./middleware/effect-plugin";
 import { authRoutes } from "./routes/auth.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
+import { getActiveToken } from "./middleware/security.ts";
 
 export const app = new Elysia()
   .onError(({ code, error, request }) => {
@@ -61,12 +62,17 @@ export const app = new Elysia()
   .get("/icon-192.png", () => Bun.file("./dist/icon-192.png"))
   .get("/icon-512.png", () => Bun.file("./dist/icon-512.png"))
   .get("/apple-touch-icon.png", () => Bun.file("./dist/apple-touch-icon.png"))
-  .get("*", ({ set }: Context) => {
+  .get("*", async ({ set }: Context) => {
     set.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, proxy-revalidate";
     set.headers["Pragma"] = "no-cache";
     set.headers["Expires"] = "0";
     if (existsSync("./dist/index.html")) {
-      return Bun.file("./dist/index.html");
+      const html = await Bun.file("./dist/index.html").text();
+      const token = getActiveToken();
+      const metaTag = `<meta name="grug-session-token" content="${token}">`;
+      const injectedHtml = html.replace("<head>", `<head>\n    ${metaTag}`);
+      set.headers["Content-Type"] = "text/html; charset=utf-8";
+      return injectedHtml;
     }
     return "Development Server: Build output is not present in `./dist`. Use the Vite dev server on port 3000.";
   });
