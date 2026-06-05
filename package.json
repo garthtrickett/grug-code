@@ -15,7 +15,6 @@
     "db:migrate": "bun run src/db/migrator.ts up",
     "db:migrate:down": "bun run src/db/migrator.ts down",
         "db:seed": "bun run src/db/seed.ts",
-    "kaishi:parse": "bun run scripts/parse-kaishi.ts",
     "db:generate": "bunx kanel --config .kanelrc.cjs",
     "migrate": "bun run db:migrate && bun run db:generate && bun run db:seed",
     "test": "vitest run",
@@ -112,6 +111,8 @@
     "tesseract.js": "^7.0.0",
     "web-push": "^3.6.7",
     "@mastra/core": "^1.34.0",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "tree-sitter-typescript": "^0.21.1",
+    "web-tree-sitter": "^0.22.4" 
   }
 }
