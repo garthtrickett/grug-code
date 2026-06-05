@@ -5,13 +5,13 @@ import { makeCommandRunner } from "../../lib/server/CommandRunner";
 import { securityMiddleware } from "../middleware/security";
 import { effectPlugin } from "../middleware/effect-plugin";
 
-const controller = makeWorkspaceController();
 const runner = makeCommandRunner();
 
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
   .post("/init", async ({ body, runEffect, set }) => {
+    const controller = makeWorkspaceController(body.cwd);
     const effect = controller.initTransaction(body.taskId);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
@@ -20,14 +20,17 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     }
     return res.right;
   }, {
-    body: t.Object({ taskId: t.String() })
+    body: t.Object({
+      taskId: t.String(),
+      cwd: t.Optional(t.String())
+    })
   })
   .post("/verify", async ({ body, runEffect, set }) => {
     const tx = body.tx;
     const type = body.type;
     const effect = type === "typecheck" 
-      ? runner.runTypeCheck(undefined, 30000) 
-      : runner.runTestSuite(undefined, 45000);
+      ? runner.runTypeCheck(body.cwd, 30000) 
+      : runner.runTestSuite(body.cwd, 45000);
     
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
@@ -43,11 +46,13 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         ephemeralBranch: t.String(),
         checkpoints: t.Array(t.String())
       }),
-      type: t.Union([t.Literal("typecheck"), t.Literal("test")])
+      type: t.Union([t.Literal("typecheck"), t.Literal("test")]),
+      cwd: t.Optional(t.String())
     })
   })
   .post("/rollback", async ({ body, runEffect, set }) => {
     const tx = body.tx;
+    const controller = makeWorkspaceController(body.cwd);
     const effect = controller.rollbackToCheckpoint(tx, body.commitHash);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
@@ -63,10 +68,12 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         ephemeralBranch: t.String(),
         checkpoints: t.Array(t.String())
       }),
-      commitHash: t.String()
+      commitHash: t.String(),
+      cwd: t.Optional(t.String())
     })
   })
   .post("/abort", async ({ body, runEffect, set }) => {
+    const controller = makeWorkspaceController(body.cwd);
     const effect = controller.abortTransaction(body.tx);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
@@ -81,10 +88,12 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         baseBranch: t.String(),
         ephemeralBranch: t.String(),
         checkpoints: t.Array(t.String())
-      })
+      }),
+      cwd: t.Optional(t.String())
     })
   })
   .post("/commit", async ({ body, runEffect, set }) => {
+    const controller = makeWorkspaceController(body.cwd);
     const effect = controller.commitTransaction(body.tx);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
@@ -99,6 +108,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         baseBranch: t.String(),
         ephemeralBranch: t.String(),
         checkpoints: t.Array(t.String())
-      })
+      }),
+      cwd: t.Optional(t.String())
     })
   });
