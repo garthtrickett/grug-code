@@ -169,8 +169,8 @@ export class GrugTaskBoard extends LitElement {
         itemToString: (item) => item || "Whole Project Root",
         itemToValue: (item) => item,
       });
-      if (this._selectService && this._selectService.service.setContext) {
-        this._selectService.service.setContext({ collection });
+            if (this._selectService && this._selectService.updateProps) {
+        this._selectService.updateProps({ collection });
       }
     }
 
