@@ -29,6 +29,17 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
 
     // Create baseline files with standard trailing newline
     await fs.writeFile(path.join(tempDir, "main.ts"), "const x: number = 10;\nconsole.log(x);\n");
+    await fs.writeFile(
+      path.join(tempDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          target: "es2022",
+          noEmit: true
+        },
+        include: ["main.ts"]
+      }, null, 2)
+    );
     await execPromise("git add .", { cwd: tempDir });
     await execPromise("git commit -m 'Initial E2E Commit'", { cwd: tempDir });
   });

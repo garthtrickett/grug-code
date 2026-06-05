@@ -5,9 +5,18 @@ import { closeCentralDb } from "../db/client";
 import * as fs from "node:fs/promises";
 
 // Safe cross-runtime Bun polyfill for Vitest running under Node
-if (typeof (globalThis as any).Bun === "undefined") {
+const globalObj = globalThis as typeof globalThis & {
+  Bun?: {
+    file: (path: string) => { text: () => Promise<string> };
+    write: (path: string, content: string) => Promise<void>;
+    env: typeof process.env;
+    gc: () => void;
+  };
+};
+
+if (typeof globalObj.Bun === "undefined") {
   console.info("[setup-worker] Polyfilling global Bun object for Node compatibility...");
-  (globalThis as any).Bun = {
+  globalObj.Bun = {
     file: (path: string) => ({
       text: () => fs.readFile(path, "utf-8"),
     }),

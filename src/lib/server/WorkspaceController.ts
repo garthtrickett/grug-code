@@ -42,11 +42,23 @@ const runCommand = (args: string[], cwd?: string) =>
       let stdout = "";
       let stderr = "";
       
-      child.stdout?.on("data", (data) => {
-        stdout += data.toString();
+            child.stdout?.on("data", (chunk: unknown) => {
+        if (Buffer.isBuffer(chunk)) {
+          stdout += chunk.toString("utf-8");
+        } else if (typeof chunk === "string") {
+          stdout += chunk;
+        } else {
+          stdout += String(chunk);
+        }
       });
-      child.stderr?.on("data", (data) => {
-        stderr += data.toString();
+      child.stderr?.on("data", (chunk: unknown) => {
+        if (Buffer.isBuffer(chunk)) {
+          stderr += chunk.toString("utf-8");
+        } else if (typeof chunk === "string") {
+          stderr += chunk;
+        } else {
+          stderr += String(chunk);
+        }
       });
       child.on("close", (exitCode) => {
         resolve({ exitCode: exitCode ?? 0, stdout, stderr });

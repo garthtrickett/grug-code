@@ -56,10 +56,16 @@ const getDirtyFilesFromGit = (cwd?: string) =>
     
     const result = yield* Effect.tryPromise({
       try: () => new Promise<{ exitCode: number; stdout: string }>((resolve, reject) => {
-        const child = spawn("git", ["diff", "--name-only"], { cwd });
+                const child = spawn("git", ["diff", "--name-only"], { cwd });
         let stdout = "";
-        child.stdout?.on("data", (data) => {
-          stdout += data.toString();
+        child.stdout?.on("data", (chunk: unknown) => {
+          if (Buffer.isBuffer(chunk)) {
+            stdout += chunk.toString("utf-8");
+          } else if (typeof chunk === "string") {
+            stdout += chunk;
+          } else {
+            stdout += String(chunk);
+          }
         });
         child.on("close", (code) => {
           resolve({ exitCode: code ?? 0, stdout });
@@ -122,12 +128,24 @@ export const makeCommandRunner = (): CommandRunner => {
             }, options.timeoutMs);
           }
 
-          child.stdout?.on("data", (data) => {
-            stdout += data.toString();
+                    child.stdout?.on("data", (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) {
+              stdout += chunk.toString("utf-8");
+            } else if (typeof chunk === "string") {
+              stdout += chunk;
+            } else {
+              stdout += String(chunk);
+            }
           });
 
-          child.stderr?.on("data", (data) => {
-            stderr += data.toString();
+          child.stderr?.on("data", (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) {
+              stderr += chunk.toString("utf-8");
+            } else if (typeof chunk === "string") {
+              stderr += chunk;
+            } else {
+              stderr += String(chunk);
+            }
           });
 
           child.on("close", (code) => {
