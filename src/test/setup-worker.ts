@@ -1,3 +1,4 @@
+ 
 import "fake-indexeddb/auto";
 import { beforeAll, afterAll } from "vitest";
 import { setupWorkerDb, teardownWorkerDb } from "./worker-db-setup";
@@ -5,25 +6,22 @@ import { closeCentralDb } from "../db/client";
 import * as fs from "node:fs/promises";
 
 // Safe cross-runtime Bun polyfill for Vitest running under Node
-const globalObj = globalThis as typeof globalThis & {
-  Bun?: {
-    file: (path: string) => { text: () => Promise<string> };
-    write: (path: string, content: string) => Promise<void>;
-    env: typeof process.env;
-    gc: () => void;
-  };
+const mockBun = {
+  file: (path: string | URL) => ({
+    text: () => fs.readFile(typeof path === "string" ? path : path.toString(), "utf-8"),
+  }),
+  write: (path: unknown, content: unknown) => {
+    const destination = typeof path === "string" ? path : String(path);
+    const data = typeof content === "string" ? content : String(content);
+    return fs.writeFile(destination, data, "utf-8");
+  },
+  env: process.env,
+  gc: () => {},
 };
 
-if (typeof globalObj.Bun === "undefined") {
+if (typeof (globalThis as unknown as Record<string, unknown>)["Bun"] === "undefined") {
   console.info("[setup-worker] Polyfilling global Bun object for Node compatibility...");
-  globalObj.Bun = {
-    file: (path: string) => ({
-      text: () => fs.readFile(path, "utf-8"),
-    }),
-    write: (path: string, content: string) => fs.writeFile(path, content, "utf-8"),
-    env: process.env,
-    gc: () => {},
-  };
+  (globalThis as unknown as Record<string, unknown>)["Bun"] = mockBun;
 }
 
 const workerId = process.env.VITEST_WORKER_ID || "1";
