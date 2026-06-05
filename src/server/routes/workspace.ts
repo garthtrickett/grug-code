@@ -33,7 +33,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return res.right;
   }, { 
@@ -86,7 +86,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return res.right;
   }, { 
@@ -111,7 +111,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return res.right;
   }, { 
@@ -129,7 +129,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      const error = res.left as any;
+      const error = res.left;
       if (error instanceof PatchApplicationError) {
         return {
           error: error.message,
@@ -139,7 +139,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
           actualContextSnippet: error.actualContextSnippet,
         };
       }
-      return { error: (error as Error).message };
+      return { error: error.message };
     }
     return { success: true };
   }, { 
@@ -207,7 +207,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return res.right;
   }, { 
@@ -231,7 +231,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return res.right;
   }, { 
@@ -253,7 +253,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return res.right;
   }, { 
@@ -274,7 +274,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") { 
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return { success: true };
   }, { 
@@ -294,7 +294,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") { 
       set.status = 400;
-      return { error: (res.left as Error).message };
+      return { error: (res.left).message };
     }
     return { success: true };
   }, { 

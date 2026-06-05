@@ -1,13 +1,16 @@
 import { Context, Effect, Layer } from "effect";
 import * as fs from "node:fs/promises";
 
-export interface TokenEstimator {
+export interface ITokenEstimator {
   readonly estimateStringTokens: (content: string) => Effect.Effect<number, never>;
   readonly estimateTokens: (filePath: string) => Effect.Effect<number, Error>;
   readonly estimateTotalTokens: (filePaths: readonly string[]) => Effect.Effect<number, Error>;
 }
 
-export const TokenEstimator = Context.Tag<TokenEstimator>("TokenEstimator");
+export class TokenEstimator extends Context.Tag("TokenEstimator")<
+  TokenEstimator,
+  ITokenEstimator
+>() {}
 
 /**
  * A highly efficient and deterministic token estimator that closely approximates

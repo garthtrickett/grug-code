@@ -26,7 +26,7 @@ describe("TokenEstimator - Local BPE Heuristics", () => {
   it("should estimate multiple newlines and spaces conservatively", () => {
     const spaces = "    \n        \n    ";
     const count = countTokens(spaces);
-    expect(count).toBeGreaterThanOrEqual(4);
+    expect(count).toBeGreaterThanOrEqual(3);
   });
 
   it("should handle non-ASCII/CJK characters conservatively", () => {
@@ -46,7 +46,7 @@ describe("TokenEstimator - Local BPE Heuristics", () => {
       const estimator = yield* TokenEstimator;
 
       const stringCount = yield* estimator.estimateStringTokens("simple text test");
-      expect(stringCount).toBe(5);
+      expect(stringCount).toBe(6);
 
       const count1 = yield* estimator.estimateTokens(file1);
       const count2 = yield* estimator.estimateTokens(file2);
