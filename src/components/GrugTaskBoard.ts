@@ -17,12 +17,13 @@ import {
   directoriesSignal,
   selectedScopeSignal,
   fetchWorkspaceDirectories,
+  createDirectorySelectMachine,
 } from "../lib/client/stores/directoryStore.ts";
 
 @customElement("grug-task-board")
 export class GrugTaskBoard extends LitElement {
   private _disposeEffect?: () => void;
-    private _selectService: VanillaMachine<typeof select.machine> | null = null;
+  private _selectService: ReturnType<typeof createDirectorySelectMachine> | null = null;
 
   protected override createRenderRoot() {
     return this; // Render in Light DOM to inherit Tailwind styles
@@ -136,7 +137,7 @@ export class GrugTaskBoard extends LitElement {
     void runClientUnscoped(clientLog("info", `[GrugTaskBoard] Removed step ${taskId} from pending queue`));
   };
 
-  private getSelectApi() {
+    private getSelectApi() {
     const items = directoriesSignal.value;
     const itemsWithRoot = ["", ...items];
 
@@ -147,7 +148,7 @@ export class GrugTaskBoard extends LitElement {
         itemToValue: (item) => item,
       });
 
-      this._selectService = new VanillaMachine(select.machine, {
+      const service = new VanillaMachine(select.machine, {
         id: "directory-scope-select",
         collection,
         value: selectedScopeSignal.value ? [selectedScopeSignal.value] : [],
@@ -156,9 +157,10 @@ export class GrugTaskBoard extends LitElement {
         },
       });
 
-      this._selectService.start();
+      this._selectService = service;
+      service.start();
 
-      this._selectService.subscribe(() => {
+      service.subscribe(() => {
         this.requestUpdate();
       });
     } else {
@@ -167,12 +169,12 @@ export class GrugTaskBoard extends LitElement {
         itemToString: (item) => item || "Whole Project Root",
         itemToValue: (item) => item,
       });
-      if (this._selectService.setContext) {
-        this._selectService.setContext({ collection });
+      if (this._selectService && this._selectService.service.setContext) {
+        this._selectService.service.setContext({ collection });
       }
     }
 
-    return select.connect(this._selectService.service, normalizeProps);
+    return select.connect(this._selectService!.service, normalizeProps);
   }
 
   private renderSelect() {
