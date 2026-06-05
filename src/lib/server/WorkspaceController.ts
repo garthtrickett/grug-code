@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { applyDiffs } from "./AiderPatcher";
 
 export interface DirtyFile {
@@ -30,6 +31,7 @@ export interface WorkspaceController {
   readonly rollbackToCheckpoint: (tx: GitTransaction, commitHash: string) => Effect.Effect<GitTransaction, Error>;
   readonly commitTransaction: (tx: GitTransaction) => Effect.Effect<void, Error>;
   readonly abortTransaction: (tx: GitTransaction) => Effect.Effect<void, Error>;
+  readonly listDirectories: () => Effect.Effect<readonly string[], Error>;
 }
 
 const runCommand = (args: string[], cwd?: string) =>
@@ -285,12 +287,71 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           return yield* Effect.fail(new Error(`Failed to checkout base branch ${tx.baseBranch}: ${checkoutCmd.stderr}`));
         }
 
-        const deleteCmd = yield* runCommand(["git", "branch", "-D", tx.ephemeralBranch], cwd);
-        if (deleteCmd.exitCode !== 0) {
-          return yield* Effect.fail(new Error(`Failed to force-delete task branch: ${deleteCmd.stderr}`));
-        }
+                    const deleteCmd = yield* runCommand(["git", "branch", "-D", tx.ephemeralBranch], cwd);
+            if (deleteCmd.exitCode !== 0) {
+              return yield* Effect.fail(new Error(`Failed to force-delete task branch: ${deleteCmd.stderr}`));
+            }
 
-        yield* Effect.logInfo("[WorkspaceController] Ephemeral transaction branch purged safely.");
-      }),
-  };
-};
+            yield* Effect.logInfo("[WorkspaceController] Ephemeral transaction branch purged safely.");
+          }),
+
+        listDirectories: () =>
+          Effect.gen(function* () {
+            yield* Effect.logInfo(`[WorkspaceController] Scanning subdirectories under root: ${cwd || "process.cwd()"}`);
+            const rootDir = path.resolve(cwd || process.cwd());
+            const dirs: string[] = [];
+            const queue: { abs: string; rel: string; depth: number }[] = [{ abs: rootDir, rel: "", depth: 0 }];
+            const IGNORED_NAMES = new Set([
+              "node_modules",
+              "dist",
+              "build",
+              "out",
+              "coverage",
+              "android",
+              "ios",
+              ".git",
+              ".vite",
+              ".idea",
+              ".vscode",
+              ".venv",
+              "test-results",
+              "playwright-report"
+            ]);
+
+            while (queue.length > 0) {
+              const current = queue.shift();
+              if (!current) continue;
+
+              const { abs, rel, depth } = current;
+              if (depth > 5) continue; // Prevent excessive deep searching
+
+              const files = yield* Effect.tryPromise({
+                try: () => fs.readdir(abs, { withFileTypes: true }),
+                catch: (e) => new Error(`Failed to read directory ${abs}: ${String(e)}`),
+              });
+
+              for (const file of files) {
+                if (file.isDirectory()) {
+                  const name = file.name;
+                  if (IGNORED_NAMES.has(name) || name.startsWith(".")) {
+                    continue;
+                  }
+                  const nextRel = rel ? `${rel}/${name}` : name;
+                  const nextAbs = path.join(abs, name);
+
+                  // Safe traversal check
+                  if (!nextAbs.startsWith(rootDir)) {
+                    continue;
+                  }
+
+                  dirs.push(nextRel);
+                  queue.push({ abs: nextAbs, rel: nextRel, depth: depth + 1 });
+                } 
+              }
+            }
+
+            dirs.sort();
+            return dirs as readonly string[];
+          }),
+      };
+    };

@@ -17,6 +17,20 @@ const runner = makeCommandRunner();
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
+  .post("/directories", async ({ body, runEffect, set }) => {
+    const controller = makeWorkspaceController(body.cwd);
+    const effect = controller.listDirectories();
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: (res.left).message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      cwd: t.Optional(t.String())
+    })
+  })
   .post("/route-execution", async ({ body, runEffect, set }) => {
     const rootDir = body.cwd || process.cwd();
     const resolvedPaths = body.paths.map((p) => {
