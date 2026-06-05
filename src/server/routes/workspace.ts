@@ -26,7 +26,6 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     })
   })
   .post("/verify", async ({ body, runEffect, set }) => {
-    const tx = body.tx;
     const type = body.type;
     const effect = type === "typecheck" 
       ? runner.runTypeCheck(body.cwd, 30000) 

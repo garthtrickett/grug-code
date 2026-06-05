@@ -12,7 +12,8 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
 
   test.beforeAll(async () => {
     // Retrieve the active loopback authorization session token dynamically from workspace storage
-    const sessionData = JSON.parse(await fs.readFile(".grug-session.json", "utf-8"));
+    const fileContent = await fs.readFile(".grug-session.json", "utf-8");
+    const sessionData = JSON.parse(fileContent) as { token: string };
     sessionToken = sessionData.token;
   });
 
@@ -53,7 +54,12 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
     });
 
     expect(initResponse.status()).toBe(200);
-    const tx = await initResponse.json();
+    const tx = (await initResponse.json()) as {
+      id: string;
+      baseBranch: string;
+      ephemeralBranch: string;
+      checkpoints: string[];
+    };
     expect(tx.ephemeralBranch).toBe(`grug-task/${taskId}`);
 
     // Verify the temporary branch was spawned programmatically in mock repo
@@ -77,11 +83,15 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
     });
 
     expect(verifyResponse.status()).toBe(200);
-    const verification = await verifyResponse.json();
+    const verification = (await verifyResponse.json()) as {
+      success: boolean;
+      errorOutput?: string;
+      dirtyFiles: Array<{ filePath: string }>;
+    };
     expect(verification.success).toBe(false);
     expect(verification.errorOutput).toContain("TS2322"); // TS standard type mismatch
     expect(verification.dirtyFiles.length).toBe(1);
-    expect(verification.dirtyFiles[0].filePath).toBe("main.ts");
+    expect(verification.dirtyFiles[0]?.filePath).toBe("main.ts");
 
     // 4. Trigger an abort transaction command
     const abortResponse = await request.post("/api/workspace/abort", {

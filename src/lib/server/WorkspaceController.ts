@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { spawn } from "node:child_process";
+import * as fs from "node:fs/promises";
 
 export interface DirtyFile {
   readonly filePath: string;
@@ -31,13 +33,28 @@ export interface WorkspaceController {
 
 const runCommand = (args: string[], cwd?: string) =>
   Effect.tryPromise({
-    try: async () => {
-      const process = Bun.spawn(args, { cwd });
-      const stdout = await new Response(process.stdout).text();
-      const stderr = await new Response(process.stderr).text();
-      const exitCode = await process.exited;
-      return { exitCode, stdout, stderr };
-    },
+    try: () => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
+      const [command, ...cmdArgs] = args;
+      if (!command) {
+        return reject(new Error("No command provided"));
+      }
+      const child = spawn(command, cmdArgs, { cwd });
+      let stdout = "";
+      let stderr = "";
+      
+      child.stdout?.on("data", (data) => {
+        stdout += data.toString();
+      });
+      child.stderr?.on("data", (data) => {
+        stderr += data.toString();
+      });
+      child.on("close", (exitCode) => {
+        resolve({ exitCode: exitCode ?? 0, stdout, stderr });
+      });
+      child.on("error", (err) => {
+        reject(err);
+      });
+    }),
     catch: (error) => new Error(`Failed to execute command ${args.join(" ")}: ${String(error)}`),
   });
 
@@ -56,11 +73,11 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         .map((f) => f.trim())
         .filter(Boolean);
 
-            const dirty: DirtyFile[] = [];
+      const dirty: DirtyFile[] = [];
       for (const file of files) {
         const filePath = cwd ? `${cwd}/${file}` : file;
         const content = yield* Effect.tryPromise({
-          try: () => Bun.file(filePath).text(),
+          try: () => fs.readFile(filePath, "utf-8"),
           catch: (e) => new Error(`Failed to read file: ${String(e)}`),
         }).pipe(Effect.catchAll(() => Effect.succeed("")));
         dirty.push({ filePath: file, content });
@@ -116,17 +133,14 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         const patchPath = cwd ? `${cwd}/${patchFile}` : patchFile;
 
         yield* Effect.tryPromise({
-          try: () => Bun.write(patchPath, patch),
+          try: () => fs.writeFile(patchPath, patch, "utf-8"),
           catch: (e) => new Error(`Failed to write local patch file: ${String(e)}`),
         });
 
         const applyCmd = yield* runCommand(["git", "apply", patchFile], cwd);
 
-                yield* Effect.tryPromise({
-          try: async () => {
-            const fs = await import("node:fs/promises");
-            await fs.unlink(patchPath).catch(() => {});
-          },
+        yield* Effect.tryPromise({
+          try: () => fs.unlink(patchPath),
           catch: (e) => new Error(`Failed to remove patch file: ${String(e)}`),
         }).pipe(Effect.catchAll(() => Effect.void));
 
@@ -138,7 +152,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly.");
       }),
 
-    runTypeCheck: (tx: GitTransaction) =>
+    runTypeCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () { 
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
         const cmd = ["bun", "x", "tsc", "--noEmit"];
@@ -159,7 +173,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runTestSuite: (tx: GitTransaction) =>
+    runTestSuite: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         const cmd = ["bun", "test"];

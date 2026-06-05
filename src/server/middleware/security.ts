@@ -12,10 +12,18 @@ export const generateGrugSessionToken = (): string => {
 export const loadGrugSessionToken = (): string => {
   try {
     if (fs.existsSync(SESSION_FILE)) {
-      const data = JSON.parse(fs.readFileSync(SESSION_FILE, "utf-8"));
-      return data.token;
+      const fileContent = fs.readFileSync(SESSION_FILE, "utf-8");
+      const data = JSON.parse(fileContent) as unknown;
+      if (
+        data &&
+        typeof data === "object" &&
+        "token" in data &&
+        typeof (data).token === "string"
+      ) {
+        return (data as { token: string }).token;
+      }
     }
-  } catch (_) {
+  } catch {
     // Fallback if parsing fails
   }
   return generateGrugSessionToken();

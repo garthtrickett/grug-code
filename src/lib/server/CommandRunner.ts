@@ -1,5 +1,7 @@
 import { Effect } from "effect";
 import type { VerificationResult, DirtyFile } from "./WorkspaceController";
+import { spawn } from "node:child_process";
+import * as fs from "node:fs/promises";
 
 export interface CommandOptions {
   readonly cwd?: string;
@@ -51,12 +53,27 @@ export const parseTestFailures = (output: string): readonly string[] => {
 const getDirtyFilesFromGit = (cwd?: string) =>
   Effect.gen(function* () {
     yield* Effect.logInfo("[CommandRunner] Gathering dirty files context via git diff...");
-    const process = Bun.spawn(["git", "diff", "--name-only"], { cwd });
-    const stdout = yield* Effect.promise(() => new Response(process.stdout).text());
-    const exitCode = yield* Effect.promise(() => process.exited);
-    if (exitCode !== 0) return [];
+    
+    const result = yield* Effect.tryPromise({
+      try: () => new Promise<{ exitCode: number; stdout: string }>((resolve, reject) => {
+        const child = spawn("git", ["diff", "--name-only"], { cwd });
+        let stdout = "";
+        child.stdout?.on("data", (data) => {
+          stdout += data.toString();
+        });
+        child.on("close", (code) => {
+          resolve({ exitCode: code ?? 0, stdout });
+        });
+        child.on("error", (err) => {
+          reject(err);
+        });
+      }),
+      catch: (e) => new Error(`Git diff command failed: ${String(e)}`),
+    });
 
-    const files = stdout
+    if (result.exitCode !== 0) return [];
+
+    const files = result.stdout
       .split("\n")
       .map((f) => f.trim())
       .filter(Boolean);
@@ -65,7 +82,7 @@ const getDirtyFilesFromGit = (cwd?: string) =>
     for (const file of files) {
       const filePath = cwd ? `${cwd}/${file}` : file;
       const content = yield* Effect.tryPromise({
-        try: () => Bun.file(filePath).text(),
+        try: () => fs.readFile(filePath, "utf-8"),
         catch: (e) => new Error(`Failed to read file: ${String(e)}`),
       }).pipe(Effect.catchAll(() => Effect.succeed("")));
       dirty.push({ filePath: file, content });
@@ -78,54 +95,67 @@ export const makeCommandRunner = (): CommandRunner => {
     Effect.gen(function* () {
       yield* Effect.logInfo(`[CommandRunner] Spawning subprocess: ${args.join(" ")}`);
 
-      const process = Bun.spawn(args, {
-        cwd: options?.cwd,
-        env: { ...Bun.env, ...options?.env } as Record<string, string>,
-      });
+      const [command, ...cmdArgs] = args;
+      if (!command) {
+        return yield* Effect.fail(new Error("No command provided"));
+      }
 
-      let timer: Timer | undefined;
-      let timedOut = false;
+      const env = { ...process.env, ...options?.env };
 
-      const exitPromise = process.exited;
-      const timeoutPromise = new Promise<number>((resolve) => {
-        if (!options?.timeoutMs) return;
-        timer = setTimeout(() => {
-          timedOut = true;
-          process.kill();
-          resolve(-1);
-        }, options.timeoutMs);
-      });
+      const result = yield* Effect.tryPromise({
+        try: () => new Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>((resolve, reject) => {
+          const child = spawn(command, cmdArgs, {
+            cwd: options?.cwd,
+            env,
+          });
 
-      const exitCode = yield* Effect.tryPromise({
-        try: () => Promise.race([exitPromise, timeoutPromise]),
+          let stdout = "";
+          let stderr = "";
+          let timedOut = false;
+
+          let timer: NodeJS.Timeout | undefined;
+          if (options?.timeoutMs) {
+            timer = setTimeout(() => {
+              timedOut = true;
+              child.kill();
+              resolve({ exitCode: -1, stdout, stderr, timedOut: true });
+            }, options.timeoutMs);
+          }
+
+          child.stdout?.on("data", (data) => {
+            stdout += data.toString();
+          });
+
+          child.stderr?.on("data", (data) => {
+            stderr += data.toString();
+          });
+
+          child.on("close", (code) => {
+            if (timer) clearTimeout(timer);
+            resolve({ exitCode: code ?? 0, stdout, stderr, timedOut });
+          });
+
+          child.on("error", (err) => {
+            if (timer) clearTimeout(timer); 
+            reject(err);
+          });
+        }),
         catch: (e) => new Error(`Subprocess terminated unexpectedly: ${String(e)}`),
       });
 
-      if (timer) clearTimeout(timer);
-
-            const stdout = yield* Effect.tryPromise({
-        try: () => new Response(process.stdout).text(),
-        catch: (e) => new Error(`Failed to read stdout: ${String(e)}`),
-      });
-
-      const stderr = yield* Effect.tryPromise({
-        try: () => new Response(process.stderr).text(),
-        catch: (e) => new Error(`Failed to read stderr: ${String(e)}`),
-      });
-
       return {
-        success: exitCode === 0 && !timedOut,
-        exitCode,
-        stdout,
-        stderr,
-        timedOut,
+        success: result.exitCode === 0 && !result.timedOut,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        timedOut: result.timedOut,
       };
     });
 
   return {
     run,
 
-        runTypeCheck: (cwd?: string, timeoutMs?: number) =>
+    runTypeCheck: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating type-safety static verification pass...");
         const result = yield* run(["bun", "x", "tsc", "--noEmit"], { cwd, timeoutMs: timeoutMs ?? 30000 });
@@ -143,7 +173,7 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-        runTestSuite: (cwd?: string, timeoutMs?: number) =>
+    runTestSuite: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
         const result = yield* run(["bun", "test"], { cwd, timeoutMs: timeoutMs ?? 45000 });
