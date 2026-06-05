@@ -2,29 +2,30 @@ import { Elysia, t } from "elysia";
 import { Effect } from "effect";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { makeWorkspaceController } from "../../lib/server/WorkspaceController";
-import { makeCommandRunner } from "../../lib/server/CommandRunner";
-import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSitterParser";
-import { extractSkeleton } from "../../lib/server/SkeletalExplorer";
-import { securityMiddleware } from "../middleware/security";
-import { SurgicalRouter, SurgicalRouterLive } from "../../lib/server/SurgicalRouter";
-import { TokenEstimatorLive } from "../../lib/server/TokenEstimator";
-import { effectPlugin } from "../middleware/effect-plugin";
-import { PatchApplicationError } from "../../lib/server/AiderPatcher";
+import { makeWorkspaceController } from "../../lib/server/WorkspaceController.ts";
+import { makeCommandRunner } from "../../lib/server/CommandRunner.ts";
+import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSitterParser.ts";
+import { extractSkeleton } from "../../lib/server/SkeletalExplorer.ts";
+import { securityMiddleware } from "../middleware/security.ts";
+import { SurgicalRouter, SurgicalRouterLive } from "../../lib/server/SurgicalRouter.ts";
+import { TokenEstimatorLive } from "../../lib/server/TokenEstimator.ts";
+import { effectPlugin } from "../middleware/effect-plugin.ts";
+import { PatchApplicationError } from "../../lib/server/AiderPatcher.ts";
 
 const runner = makeCommandRunner();
 
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
-    .post("/route-execution", async ({ body, runEffect, set }) => {
+  .post("/route-execution", async ({ body, runEffect, set }) => {
     const rootDir = body.cwd || process.cwd();
     const resolvedPaths = body.paths.map((p) => {
       return path.isAbsolute(p) ? p : path.resolve(rootDir, p);
     });
 
-    const effect = SurgicalRouter.pipe(
-      Effect.flatMap((router) => router.routeExecution(resolvedPaths)),
+    const effect = Effect.flatMap(SurgicalRouter, (router) =>
+      router.routeExecution(resolvedPaths)
+    ).pipe(
       Effect.provide(SurgicalRouterLive),
       Effect.provide(TokenEstimatorLive)
     );
@@ -32,10 +33,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return res.right;
-  }, {
+  }, { 
     body: t.Object({
       paths: t.Array(t.String()),
       cwd: t.Optional(t.String())
@@ -85,10 +86,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return res.right;
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),
@@ -110,10 +111,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return res.right;
-  }, {
+  }, { 
     body: t.Object({
       taskId: t.String(),
       cwd: t.Optional(t.String())
@@ -128,8 +129,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      const error = res.left;
-            if (error instanceof PatchApplicationError) {
+      const error = res.left as any;
+      if (error instanceof PatchApplicationError) {
         return {
           error: error.message,
           filePath: error.path && body.cwd ? path.relative(body.cwd, error.path) : error.path,
@@ -138,10 +139,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
           actualContextSnippet: error.actualContextSnippet,
         };
       }
-      return { error: (error).message };
+      return { error: (error as Error).message };
     }
     return { success: true };
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),
@@ -206,10 +207,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return res.right;
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),
@@ -230,10 +231,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return res.right;
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),
@@ -252,10 +253,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return res.right;
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),
@@ -271,12 +272,12 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.abortTransaction(body.tx);
     const res = await runEffect(Effect.either(effect));
-    if (res._tag === "Left") {
+    if (res._tag === "Left") { 
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return { success: true };
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),
@@ -291,12 +292,12 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.commitTransaction(body.tx);
     const res = await runEffect(Effect.either(effect));
-    if (res._tag === "Left") {
+    if (res._tag === "Left") { 
       set.status = 400;
-      return { error: res.left.message };
+      return { error: (res.left as Error).message };
     }
     return { success: true };
-  }, {
+  }, { 
     body: t.Object({
       tx: t.Object({
         id: t.String(),

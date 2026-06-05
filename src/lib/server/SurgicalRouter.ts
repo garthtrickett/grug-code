@@ -1,17 +1,20 @@
 import { Context, Effect, Layer } from "effect";
-import { TokenEstimator } from "./TokenEstimator";
+import { TokenEstimator } from "./TokenEstimator.ts";
 
 export type ExecutionRoute =
   | { readonly path: "DIRECT" }
   | { readonly path: "SURGICAL"; readonly reason: string };
 
-export interface SurgicalRouter {
+export interface ISurgicalRouter {
   readonly routeExecution: (
     filePaths: readonly string[]
   ) => Effect.Effect<ExecutionRoute, Error>;
 }
 
-export const SurgicalRouter = Context.Tag<SurgicalRouter>("SurgicalRouter");
+export class SurgicalRouter extends Context.Tag("SurgicalRouter")<
+  SurgicalRouter,
+  ISurgicalRouter
+>() {}
 
 export const SurgicalRouterLive = Layer.effect(
   SurgicalRouter,

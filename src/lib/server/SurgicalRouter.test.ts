@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Effect } from "effect";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { SurgicalRouter, SurgicalRouterLive } from "./SurgicalRouter";
-import { TokenEstimatorLive } from "./TokenEstimator";
+import { SurgicalRouter, SurgicalRouterLive } from "./SurgicalRouter.ts";
+import { TokenEstimatorLive } from "./TokenEstimator.ts";
 
 describe("SurgicalRouter - Route Specification & Code Paths", () => {
   let tempDir: string;
@@ -29,7 +29,8 @@ describe("SurgicalRouter - Route Specification & Code Paths", () => {
     const result = await Effect.runPromise(Effect.either(program));
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") {
-      expect(result.left.message).toContain("target files array cannot be empty");
+      const err = result.left as Error;
+      expect(err.message).toContain("target files array cannot be empty");
     }
   });
 
@@ -77,7 +78,7 @@ describe("SurgicalRouter - Route Specification & Code Paths", () => {
     await Effect.runPromise(program);
   });
 
-  it("should route to SURGICAL when total estimated tokens exceed 20,000", async () => {
+  it("should route to SURGICAL when total estimated tokens exceed 20,000", async () => { 
     const file1 = path.join(tempDir, "heavy.ts");
     const content = "word ".repeat(25000);
     await fs.writeFile(file1, content);

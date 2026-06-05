@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Effect } from "effect";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { TokenEstimator, TokenEstimatorLive, countTokens } from "./TokenEstimator";
+import { TokenEstimator, TokenEstimatorLive, countTokens } from "./TokenEstimator.ts";
 
 describe("TokenEstimator - Local BPE Heuristics", () => {
   let tempDir: string;
@@ -42,7 +42,8 @@ describe("TokenEstimator - Local BPE Heuristics", () => {
     await fs.writeFile(file1, "export const value = 42;\n");
     await fs.writeFile(file2, JSON.stringify({ name: "grug", count: 123 }));
 
-    const program = Effect.gen(function* () { const estimator = yield* TokenEstimator;
+    const program = Effect.gen(function* () {
+      const estimator = yield* TokenEstimator;
 
       const stringCount = yield* estimator.estimateStringTokens("simple text test");
       expect(stringCount).toBe(5);
