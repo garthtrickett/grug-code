@@ -22,7 +22,7 @@ import {
 @customElement("grug-task-board")
 export class GrugTaskBoard extends LitElement {
   private _disposeEffect?: () => void;
-    private _selectService: VanillaMachine<select.Context, select.State, select.Event> | null = null;
+    private _selectService: VanillaMachine<typeof select.machine> | null = null;
 
   protected override createRenderRoot() {
     return this; // Render in Light DOM to inherit Tailwind styles
@@ -147,7 +147,7 @@ export class GrugTaskBoard extends LitElement {
         itemToValue: (item) => item,
       });
 
-            this._selectService = new VanillaMachine(select.machine, {
+      this._selectService = new VanillaMachine(select.machine, {
         id: "directory-scope-select",
         collection,
         value: selectedScopeSignal.value ? [selectedScopeSignal.value] : [],
@@ -300,7 +300,7 @@ export class GrugTaskBoard extends LitElement {
                       type="text" 
                       required 
                       placeholder="e.g. Fix memory leak inside Postgres client pooling during heavy load scenarios" 
-                      class="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-600 text-sm"
+                      class="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
                     />
                   </div>
 
