@@ -8,6 +8,7 @@ import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSit
 import { extractSkeleton } from "../../lib/server/SkeletalExplorer";
 import { securityMiddleware } from "../middleware/security";
 import { effectPlugin } from "../middleware/effect-plugin";
+import { PatchApplicationError } from "../../lib/server/AiderPatcher";
 
 const runner = makeCommandRunner();
 
@@ -29,7 +30,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-      .post("/patch", async ({ body, runEffect, set }) => {
+  .post("/patch", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const patchPayload = typeof body.patch === "string" ? body.patch : JSON.stringify(body.patch);
     const effect = controller.applyPatch(body.tx, patchPayload).pipe(
@@ -39,22 +40,16 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     if (res._tag === "Left") {
       set.status = 400;
       const error = res.left;
-      if (
-        error &&
-        typeof error === "object" &&
-        "_tag" in error &&
-        error._tag === "PatchApplicationError"
-      ) {
-        const errObj = error as any;
+      if (error instanceof PatchApplicationError) {
         return {
-          error: errObj.message,
-          filePath: errObj.path,
-          failedSearchBlock: errObj.failedSearchBlock,
-          proposedReplacement: errObj.proposedReplacement,
-          actualContextSnippet: errObj.actualContextSnippet,
+          error: error.message,
+          filePath: error.path,
+          failedSearchBlock: error.failedSearchBlock,
+          proposedReplacement: error.proposedReplacement,
+          actualContextSnippet: error.actualContextSnippet,
         };
       }
-      return { error: (error as Error).message };
+      return { error: (error).message };
     }
     return { success: true };
   }, {

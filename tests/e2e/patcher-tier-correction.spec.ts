@@ -104,7 +104,7 @@ test.describe("Grug Code Patcher Tier-3 and Tier-4 E2E", () => {
     });
 
     expect(patchResponseT3.status()).toBe(200);
-    const t3Result = await patchResponseT3.json();
+    const t3Result = (await patchResponseT3.json()) as { success: boolean };
     expect(t3Result.success).toBe(true);
 
     const updatedContent = await fs.readFile(path.join(tempDir, "worker.ts"), "utf-8");

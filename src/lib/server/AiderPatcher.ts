@@ -1,16 +1,10 @@
-import { Effect, Data, Option } from "effect";
+import { Effect, Data } from "effect";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import Parser from "web-tree-sitter";
 import { TreeSitterParser } from "./TreeSitterParser";
 
 export class PatchApplicationError extends Data.TaggedError("PatchApplicationError")<{
-  readonly message: string;
-  readonly path?: string;
-  readonly failedSearchBlock?: string;
-  readonly proposedReplacement?: string;
-  readonly actualContextSnippet?: string;
-}> {}
   readonly message: string;
   readonly path?: string;
   readonly failedSearchBlock?: string;
@@ -284,7 +278,7 @@ export function replaceClosestEditDistance(
     return null;
   }
 
-  const similarityThresh = 0.55;
+  const similarityThresh = 0.85;
   let maxSimilarity = 0;
   let mostSimilarChunkStart = -1;
   let mostSimilarChunkEnd = -1;
@@ -341,6 +335,48 @@ export function perfectOrWhitespace(
   }
 
   return null;
+}
+
+export function replaceMostSimilarChunk(
+  whole: string,
+  part: string,
+  replace: string
+): [string, string] | [null, string] {
+  if (!part.trim()) {
+    if (!whole.trim()) {
+      return [replace, "New file initialization"];
+    }
+    const suffix = whole.trimEnd() + "\n" + replace + "\n";
+    return [suffix, "Empty search block append"];
+  }
+
+  const [prepWhole, wholeLines] = prep(whole);
+  const [prepPart, partLines] = prep(part);
+  const [prepReplace, replaceLines] = prep(replace);
+
+  const res1 = perfectOrWhitespace(wholeLines, partLines, replaceLines);
+  if (res1 !== null) {
+    return res1;
+  }
+
+  if (partLines.length > 1 && !partLines[0]?.trim()) {
+    const res2 = perfectOrWhitespace(wholeLines, partLines.slice(1), replaceLines);
+    if (res2 !== null) {
+      return [res2[0], "Skipped leading blank line match"];
+    }
+  }
+
+  const res3 = tryDotdotdots(prepWhole, prepPart, prepReplace);
+  if (res3 !== null) {
+    return [res3, "Elision (...) match"];
+  }
+
+  const res4 = replaceClosestEditDistance(wholeLines, prepPart, partLines, replaceLines);
+  if (res4 !== null) {
+    return [res4, "Fuzzy sequence match (>80% similarity)"];
+  }
+
+  return [null, "Failed to match"];
 }
 
 export function findClosestMatchContext(
@@ -457,7 +493,13 @@ function findMatchingNode(
 }
 
 function hasSyntaxError(node: Parser.SyntaxNode): boolean {
-  if (node.type === "ERROR" || node.isMissing()) {
+  const nodeAsUnknown = node as unknown as Record<string, unknown>;
+  const missingVal = nodeAsUnknown["isMissing"];
+  const missing = typeof missingVal === "function"
+    ? (missingVal as () => boolean)()
+    : !!missingVal;
+
+  if (node.type === "ERROR" || missing) {
     return true;
   }
   for (let i = 0; i < node.childCount; i++) {
@@ -467,48 +509,6 @@ function hasSyntaxError(node: Parser.SyntaxNode): boolean {
     }
   }
   return false;
-}
-
-export function replaceMostSimilarChunk(
-  whole: string,
-  part: string,
-  replace: string
-): [string, string] | [null, string] {
-  if (!part.trim()) {
-    if (!whole.trim()) {
-      return [replace, "New file initialization"];
-    }
-    const suffix = whole.trimEnd() + "\n" + replace + "\n";
-    return [suffix, "Empty search block append"];
-  }
-
-  const [prepWhole, wholeLines] = prep(whole);
-  const [prepPart, partLines] = prep(part);
-  const [prepReplace, replaceLines] = prep(replace);
-
-  const res1 = perfectOrWhitespace(wholeLines, partLines, replaceLines);
-  if (res1 !== null) {
-    return res1;
-  }
-
-  if (partLines.length > 1 && !partLines[0]?.trim()) {
-    const res2 = perfectOrWhitespace(wholeLines, partLines.slice(1), replaceLines);
-    if (res2 !== null) {
-      return [res2[0], "Skipped leading blank line match"];
-    }
-  }
-
-  const res3 = tryDotdotdots(prepWhole, prepPart, prepReplace);
-  if (res3 !== null) {
-    return [res3, "Elision (...) match"];
-  }
-
-  const res4 = replaceClosestEditDistance(wholeLines, prepPart, partLines, replaceLines);
-  if (res4 !== null) {
-    return [res4, "Fuzzy sequence match (>80% similarity)"];
-  }
-
-  return [null, "Failed to match"];
 }
 
 const HEAD_RE = /^<{5,9} SEARCH>?\s*$/;
@@ -595,7 +595,7 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
     });
 
     const parserOpt = yield* Effect.serviceOption(TreeSitterParser);
-    const parser = Option.isSome(parserOpt) ? parserOpt.value.parser : null;
+    const parser = parserOpt._tag === "Some" ? parserOpt.value.parser : null;
 
     const summary = data.summary || "No summary provided";
     yield* Effect.logInfo(`[AiderPatcher] Executing patch dry-run: summary is "${summary}"`);
@@ -630,7 +630,7 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
 
       yield* Effect.logInfo(`[AiderPatcher] Processing ${filePath} (${blocks.length} blocks)...`);
 
-            let currentContent = content;
+      let currentContent = content;
       for (let i = 0; i < blocks.length; i++) {
         const block = blocks[i];
         if (!block) continue;
@@ -687,6 +687,21 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
               failedSearchBlock: searchPart,
               proposedReplacement: replacement,
               actualContextSnippet: actualContext,
+            })
+          );
+        }
+      }
+
+            // Verify syntactic correctness of the entire resulting file
+      const isTsOrJs = /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(filePath);
+      if (parser && isTsOrJs) {
+        const finalTree = parser.parse(currentContent);
+        if (hasSyntaxError(finalTree.rootNode)) {
+          yield* Effect.logError(`  ❌ [SYNTAX ERROR] Resulting file "${filePath}" has syntax errors.`);
+          return yield* Effect.fail(
+            new PatchApplicationError({
+              message: `Syntax validation failed for modified file "${filePath}". The resulting code contains syntax errors.`,
+              path: filePath,
             })
           );
         }

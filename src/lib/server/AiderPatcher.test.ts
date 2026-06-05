@@ -98,14 +98,14 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
       ]
     });
 
-        const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
+    const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
     const success = await Effect.runPromise(runner);
     expect(success).toBe(true);
 
     const updatedContent = await fs.readFile(tempFile, "utf-8");
     expect(updatedContent).toBe("initial content\nupdated line 2\n");
 
-        await fs.unlink(tempFile);
+    await fs.unlink(tempFile);
   });
 
   it("should capture high-fidelity mismatch diagnostics when search block fails to match", async () => {
@@ -121,19 +121,19 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
       files: [
         {
           file_path: tempFile,
-          code_diff: "\n<<<<<<< SEARCH\nconst a = 1;\nconst b = 999;\nconst c = 3;\n=======\nconst abc = 123;\n>>>>>>> REPLACE\n"
+          code_diff: "\n<<<<<<< SEARCH\nconst x = 999;\nconst y = 888;\nconst z = 777;\n=======\nconst abc = 123;\n>>>>>>> REPLACE\n"
         }
       ]
     });
 
-        const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
+    const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
 
     try {
       await Effect.runPromise(runner);
       throw new Error("Expected to fail");
     } catch (error: any) {
       expect(error._tag).toBe("PatchApplicationError");
-      expect(error.failedSearchBlock).toContain("const b = 999;");
+      expect(error.failedSearchBlock).toContain("const x = 999;");
       expect(error.proposedReplacement).toContain("const abc = 123;");
       expect(error.actualContextSnippet).toContain("const b = 2;");
       expect(error.actualContextSnippet).toContain("const a = 1;");
@@ -143,8 +143,8 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     await fs.unlink(tempFile);
   });
 
-  it("should successfully apply a Tier 3 AST-Node replacement when search block has malformed indentation/comments", async () => {
-    const tempFile = path.join(process.cwd(), `aider-temp-ast-${crypto.randomUUID()}.txt`);
+    it("should successfully apply a Tier 3 AST-Node replacement when search block has malformed indentation/comments", async () => {
+    const tempFile = path.join(process.cwd(), `aider-temp-ast-${crypto.randomUUID()}.ts`);
     const initialContent = [
       "export function calcPrice(price: number): number {",
       "  // original comment here",
@@ -187,8 +187,8 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     await fs.unlink(tempFile);
   });
 
-  it("should reject Tier 3 AST replacement if it generates syntax error nodes", async () => {
-    const tempFile = path.join(process.cwd(), `aider-temp-ast-err-${crypto.randomUUID()}.txt`);
+    it("should reject Tier 3 AST replacement if it generates syntax error nodes", async () => {
+    const tempFile = path.join(process.cwd(), `aider-temp-ast-err-${crypto.randomUUID()}.ts`);
     const initialContent = [
       "export function calcPrice(price: number): number {",
       "  const tax = price * 0.1;",
