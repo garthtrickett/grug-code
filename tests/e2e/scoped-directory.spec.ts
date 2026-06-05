@@ -85,7 +85,7 @@ test.describe("Grug Code Scoped Directory Selector E2E", () => {
     await expect(txHeader).toContainText("Workspace Transaction: e2e-scoped-flow");
 
     // 10. Check branch configuration inside UI
-    const ephemeralDetails = page.locator("grug-task-board p");
+    const ephemeralDetails = page.locator("grug-task-board p").filter({ hasText: "Ephemeral Branch" });
     await expect(ephemeralDetails).toContainText("grug-task/e2e-scoped-flow");
 
     // 11. Abort task cleanly to restore repository

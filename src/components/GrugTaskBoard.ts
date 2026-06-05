@@ -174,7 +174,7 @@ export class GrugTaskBoard extends LitElement {
       }
     }
 
-    return select.connect(this._selectService!.service, normalizeProps);
+    return select.connect(this._selectService.service, normalizeProps);
   }
 
   private renderSelect() {
