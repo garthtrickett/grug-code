@@ -114,4 +114,72 @@ Patched via REST API.
     );
     expect(abortResponse.status).toBe(200);
   });
+
+  it("should return parsed AST skeletons for requested target files in the workspace", async () => {
+    const token = getActiveToken();
+
+    // 1. Create a dummy TypeScript file to be parsed
+    const tsFileContent = `
+export function hello(name: string): string {
+  console.log("doing details");
+  return "hello " + name;
+}
+    `;
+    await fs.writeFile(path.join(tempDir, "hello.ts"), tsFileContent);
+    await execPromise("git add hello.ts", { cwd: tempDir });
+    await execPromise("git commit -m 'commit hello.ts'", { cwd: tempDir });
+
+    // 2. Initialize a Git transaction
+    const initResponse = await app.handle(
+      new Request("http://localhost/api/workspace/init", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ taskId: "api-skeleton-test-id", cwd: tempDir }),
+      })
+    );
+
+    expect(initResponse.status).toBe(200);
+    const tx = await initResponse.json();
+
+    // 3. Request skeletons for the created file
+    const skeletonsResponse = await app.handle(
+      new Request("http://localhost/api/workspace/skeletons", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          tx,
+          paths: ["hello.ts"],
+          cwd: tempDir,
+        }),
+      })
+    );
+
+    expect(skeletonsResponse.status).toBe(200);
+    const result = await skeletonsResponse.json();
+    
+    expect(result.length).toBe(1);
+    expect(result[0].filePath).toBe("hello.ts");
+    
+    // Assert method body was stripped down to {} and logic is hidden
+    expect(result[0].content).toContain("export function hello(name: string): string {}");
+    expect(result[0].content).not.toContain("doing details");
+
+    // Clean up transaction
+    await app.handle(
+      new Request("http://localhost/api/workspace/abort", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ tx, cwd: tempDir }),
+      })
+    );
+  });
 });

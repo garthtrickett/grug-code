@@ -1,1 +1,63 @@
-import Parser from "web-tree-sitter";\nimport { Effect, Data } from "effect";\n\nexport class ParserError extends Data.TaggedError("ParserError")<{\n  readonly message: string;\n}> {}\n\nexport const extractSkeleton = (\n  content: string,\n  parser: Parser\n): Effect.Effect<string, ParserError> =>\n  Effect.gen(function* () {\n    if (!content.trim()) {\n      return "";\n    }\n\n    const tree = yield* Effect.try({\n      try: () => parser.parse(content),\n      catch: (e) => new ParserError({ message: `Failed to parse typescript content: ${String(e)}` }),\n    });\n\n    const ranges: Array<{ start: number; end: number; replacement: string }> = [];\n\n    const traverse = (node: Parser.SyntaxNode): void => {\n      const parentType = node.parent?.type;\n\n      if (node.type === "statement_block") {\n        if (\n          parentType === "function_declaration" ||\n          parentType === "method_definition" ||\n          parentType === "generator_function_declaration" ||\n          parentType === "arrow_function" ||\n          parentType === "function_expression"\n        ) {\n          ranges.push({\n            start: node.startIndex,\n            end: node.endIndex,\n            replacement: "{}",\n          });\n          return;\n        }\n      }\n\n      for (let i = 0; i < node.childCount; i++) {\n        const child = node.child(i);\n        if (child) {\n          traverse(child);\n        }\n      }\n    };\n\n    traverse(tree.rootNode);\n\n    // Sort in descending order to apply replacements from back-to-front\n    ranges.sort((a, b) => b.start - a.start);\n\n    let result = content;\n    for (const range of ranges) {\n      result = result.slice(0, range.start) + range.replacement + result.slice(range.end);\n    }\n\n    return result;\n  });\n
+import Parser from "web-tree-sitter";
+import { Effect, Data } from "effect";
+
+export class ParserError extends Data.TaggedError("ParserError")<{
+  readonly message: string;
+}> {}
+
+export const extractSkeleton = (
+  content: string,
+  parser: Parser
+): Effect.Effect<string, ParserError> =>
+  Effect.gen(function* () {
+    if (!content.trim()) {
+      return "";
+    }
+
+    const tree = yield* Effect.try({
+      try: () => parser.parse(content),
+      catch: (e) => new ParserError({ message: `Failed to parse typescript content: ${String(e)}` }),
+    });
+
+    const ranges: Array<{ start: number; end: number; replacement: string }> = [];
+
+    const traverse = (node: Parser.SyntaxNode): void => {
+      const parentType = node.parent?.type;
+
+      if (node.type === "statement_block") {
+        if (
+          parentType === "function_declaration" ||
+          parentType === "method_definition" ||
+          parentType === "generator_function_declaration" ||
+          parentType === "arrow_function" ||
+          parentType === "function_expression"
+        ) {
+          ranges.push({
+            start: node.startIndex,
+            end: node.endIndex,
+            replacement: "{}",
+          });
+          return;
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          traverse(child);
+        }
+      }
+    };
+
+    traverse(tree.rootNode);
+
+    // Sort in descending order to apply replacements from back-to-front
+    ranges.sort((a, b) => b.start - a.start);
+
+    let result = content;
+    for (const range of ranges) {
+      result = result.slice(0, range.start) + range.replacement + result.slice(range.end);
+    }
+
+    return result;
+  });

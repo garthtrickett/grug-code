@@ -1,7 +1,11 @@
 import { Elysia, t } from "elysia";
 import { Effect } from "effect";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { makeWorkspaceController } from "../../lib/server/WorkspaceController";
 import { makeCommandRunner } from "../../lib/server/CommandRunner";
+import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSitterParser";
+import { extractSkeleton } from "../../lib/server/SkeletalExplorer";
 import { securityMiddleware } from "../middleware/security";
 import { effectPlugin } from "../middleware/effect-plugin";
 
@@ -53,6 +57,65 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
           }))
         })
       ]),
+      cwd: t.Optional(t.String())
+    })
+  })
+  .post("/skeletons", async ({ body, runEffect, set }) => {
+    const effect = Effect.gen(function* () {
+      const getSafeFilePath = (rawPath: string, cwd?: string) =>
+        Effect.gen(function* () {
+          const rootDir = path.resolve(cwd || process.cwd());
+          const resolved = path.resolve(rootDir, rawPath);
+          if (!resolved.startsWith(rootDir)) {
+            return yield* Effect.fail(new Error(`Path traversal attempt detected: ${rawPath}`));
+          }
+          return resolved;
+        });
+
+      const processFile = (filePath: string) =>
+        Effect.gen(function* () {
+          const { parser } = yield* TreeSitterParser;
+          const safePath = yield* getSafeFilePath(filePath, body.cwd);
+
+          const exists = yield* Effect.tryPromise({
+            try: () => fs.promises.stat(safePath).then(() => true).catch(() => false),
+            catch: (e) => new Error(`Stat failed: ${String(e)}`),
+          });
+
+          if (!exists) {
+            return { filePath, content: "", error: "File not found" };
+          }
+
+          const fileContent = yield* Effect.tryPromise({
+            try: () => fs.promises.readFile(safePath, "utf-8"),
+            catch: (e) => new Error(`Failed to read file ${filePath}: ${String(e)}`),
+          });
+
+          const skeleton = yield* extractSkeleton(fileContent, parser);
+          return { filePath, content: skeleton };
+        });
+
+      return yield* Effect.all(
+        body.paths.map((p) => processFile(p)),
+        { concurrency: "unbounded" }
+      );
+    }).pipe(Effect.provide(TreeSitterParserLive));
+
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: res.left.message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      tx: t.Object({
+        id: t.String(),
+        baseBranch: t.String(),
+        ephemeralBranch: t.String(),
+        checkpoints: t.Array(t.String())
+      }),
+      paths: t.Array(t.String()),
       cwd: t.Optional(t.String())
     })
   })

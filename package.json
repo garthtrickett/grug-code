@@ -14,7 +14,8 @@
     "db:reset": "docker compose down -v && docker compose up -d && ./scripts/wait-for-postgres.sh && bun run migrate",
     "db:migrate": "bun run src/db/migrator.ts up",
     "db:migrate:down": "bun run src/db/migrator.ts down",
-        "db:seed": "bun run src/db/seed.ts",
+    "db:seed": "bun run src/db/seed.ts",
+    "kaishi:parse": "bun run scripts/parse-kaishi.ts",
     "db:generate": "bunx kanel --config .kanelrc.cjs",
     "migrate": "bun run db:migrate && bun run db:generate && bun run db:seed",
     "test": "vitest run",
@@ -33,7 +34,7 @@
     "@tailwindcss/vite": "^4.1.11",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/user-event": "^14.6.1",
-        "@types/bun": "^1.2.18",
+    "@types/bun": "^1.2.18",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.8.6",
     "@types/pdfmake": "^0.2.11",
@@ -50,7 +51,7 @@
     "eslint": "^9.31.0",
     "eslint-plugin-lit": "^2.1.1",
     "eslint-plugin-lit-a11y": "^5.1.0",
-        "eslint-plugin-wc": "^3.0.1",
+    "eslint-plugin-wc": "^3.0.1",
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^26.1.0",
     "postcss": "^8.5.6",
@@ -109,10 +110,10 @@
     "pg-cursor": "^2.12.3",
     "qrcode": "^1.5.4",
     "tesseract.js": "^7.0.0",
+    "tree-sitter-wasms": "^0.1.13",
     "web-push": "^3.6.7",
+    "web-tree-sitter": "^0.22.4",
     "@mastra/core": "^1.34.0",
-    "zod": "^3.24.1",
-    "tree-sitter-typescript": "^0.21.1",
-    "web-tree-sitter": "^0.22.4" 
+    "zod": "^3.24.1"
   }
 }
