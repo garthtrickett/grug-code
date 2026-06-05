@@ -14,6 +14,8 @@ a.txt
 context_testing.txt
 test_results.txt
 test_results_detailed.txt
+.grug-session.json
+.grug-patch-*.patch
 
 # --- Dependencies & Build Outputs ---
 node_modules

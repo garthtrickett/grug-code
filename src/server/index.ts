@@ -9,6 +9,7 @@ import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
 import { effectPlugin } from "./middleware/effect-plugin";
 import { authRoutes } from "./routes/auth.ts";
+import { workspaceRoutes } from "./routes/workspace.ts";
 
 export const app = new Elysia()
   .onError(({ code, error, request }) => {
@@ -17,7 +18,7 @@ export const app = new Elysia()
   .onRequest(({ request }) => {
     console.info(`📡 [HTTP] ${request.method} ${request.url}`);
   })
-  .post("/api/log", ({ body }) => {
+    .post("/api/log", ({ body }) => {
     const logPayload = body as {
       level: string;
       message: string;
@@ -33,6 +34,7 @@ export const app = new Elysia()
     return { success: true };
   })
   .use(authRoutes)
+  .use(workspaceRoutes)
   .use(cors({
     origin: [
       /localhost.*/,
