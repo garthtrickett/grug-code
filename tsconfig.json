@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "target": "es2022",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "module": "preserve",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "lib": [
+      "es2022",
+      "DOM"
+    ],
+        "types": [
+      "bun-types",
+      "vite/client",
+      "mocha"
+    ]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "src/vite-env.d.ts",
+    "web-test-runner.config.js"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

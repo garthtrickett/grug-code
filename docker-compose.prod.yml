@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: always
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=main
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - life-io-net
+
+  life-io-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_ROOT_DOMAIN: ${VITE_ROOT_DOMAIN}
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://postgres:${DB_PASSWORD}@postgres:5432/main
+      - LOG_LEVEL=info
+      - OTLP_BASE_URL=http://otel-collector:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - life-io-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: always
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    env_file:
+      - .env
+    networks:
+      - life-io-net
+
+  caddy:
+    image: caddy:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.hetzner:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - life-io-backend
+    networks:
+      - life-io-net
+
+volumes:
+  db_data: {}
+  caddy_data: {}
+  caddy_config: {}
+
+networks:
+  life-io-net:

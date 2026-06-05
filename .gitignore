@@ -1,0 +1,69 @@
+# --- Environment and Secrets ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.jks
+*.keystore
+signing_key.jks
+
+# --- Local Config & Temporary Files ---
+current_response.json
+a.txt
+context_testing.txt
+test_results.txt
+test_results_detailed.txt
+
+# --- Dependencies & Build Outputs ---
+node_modules
+dist/
+build/
+out/
+.vite
+.eslintcache
+.pnpm-debug.log*
+yarn-error.log*
+npm-debug.log*
+bun.lockb
+
+# --- Testing & Code Coverage ---
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
+
+# --- IDEs and Editors ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# --- Operating System Artifacts ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Nix and Development Shells ---
+.direnv/
+.envrc.private
+result
+result-*
+
+# --- Infrastructure & Terraform ---
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.backup
+infra/**/*.tfvars
+.terraform.lock.hcl
+.android_sdk/
