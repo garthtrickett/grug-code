@@ -1,8 +1,16 @@
-import { Effect, Data } from "effect";
+import { Effect, Data, Option } from "effect";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import Parser from "web-tree-sitter";
+import { TreeSitterParser } from "./TreeSitterParser";
 
 export class PatchApplicationError extends Data.TaggedError("PatchApplicationError")<{
+  readonly message: string;
+  readonly path?: string;
+  readonly failedSearchBlock?: string;
+  readonly proposedReplacement?: string;
+  readonly actualContextSnippet?: string;
+}> {}
   readonly message: string;
   readonly path?: string;
   readonly failedSearchBlock?: string;
@@ -373,6 +381,94 @@ export function findClosestMatchContext(
   return contextLines.join("");
 }
 
+function findDeclaredEntities(node: Parser.SyntaxNode): Array<{ type: string; name: string }> {
+  const entities: Array<{ type: string; name: string }> = [];
+
+  const traverse = (n: Parser.SyntaxNode) => {
+    if (
+      n.type === "function_declaration" ||
+      n.type === "class_declaration" ||
+      n.type === "interface_declaration" ||
+      n.type === "method_definition"
+    ) {
+      let name = "";
+      for (let i = 0; i < n.childCount; i++) {
+        const child = n.child(i);
+        if (child) {
+          if (child.type === "identifier" || child.type === "type_identifier" || child.type === "property_identifier") {
+            name = child.text;
+            break;
+          }
+        }
+      }
+      if (name) {
+        entities.push({ type: n.type, name });
+      }
+    }
+    for (let i = 0; i < n.childCount; i++) {
+      const child = n.child(i);
+      if (child) {
+        traverse(child);
+      }
+    }
+  };
+
+  traverse(node);
+  return entities;
+}
+
+function findMatchingNode(
+  rootNode: Parser.SyntaxNode,
+  type: string,
+  name: string
+): Parser.SyntaxNode | null {
+  let matched: Parser.SyntaxNode | null = null;
+
+  const traverse = (n: Parser.SyntaxNode) => {
+    if (matched) return;
+
+    if (n.type === type) {
+      let nodeName = "";
+      for (let i = 0; i < n.childCount; i++) {
+        const child = n.child(i);
+        if (child) {
+          if (child.type === "identifier" || child.type === "type_identifier" || child.type === "property_identifier") {
+            nodeName = child.text;
+            break;
+          }
+        }
+      }
+      if (nodeName === name) {
+        matched = n;
+        return;
+      }
+    }
+
+    for (let i = 0; i < n.childCount; i++) {
+      const child = n.child(i);
+      if (child) {
+        traverse(child);
+      }
+    }
+  };
+
+  traverse(rootNode);
+  return matched;
+}
+
+function hasSyntaxError(node: Parser.SyntaxNode): boolean {
+  if (node.type === "ERROR" || node.isMissing()) {
+    return true;
+  }
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child && hasSyntaxError(child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function replaceMostSimilarChunk(
   whole: string,
   part: string,
@@ -498,6 +594,9 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
       catch: (e) => new PatchApplicationError({ message: `JSON parsing failed: ${String(e)}` }),
     });
 
+    const parserOpt = yield* Effect.serviceOption(TreeSitterParser);
+    const parser = Option.isSome(parserOpt) ? parserOpt.value.parser : null;
+
     const summary = data.summary || "No summary provided";
     yield* Effect.logInfo(`[AiderPatcher] Executing patch dry-run: summary is "${summary}"`);
 
@@ -531,17 +630,54 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
 
       yield* Effect.logInfo(`[AiderPatcher] Processing ${filePath} (${blocks.length} blocks)...`);
 
-      let currentContent = content;
+            let currentContent = content;
       for (let i = 0; i < blocks.length; i++) {
         const block = blocks[i];
         if (!block) continue;
         const [searchPart, replacement] = block;
 
-        const [newContent, strategy] = replaceMostSimilarChunk(currentContent, searchPart, replacement);
+        let [newContent, strategy] = replaceMostSimilarChunk(currentContent, searchPart, replacement);
+
+        if (newContent === null && parser) {
+          try {
+            const wholeTree = parser.parse(currentContent);
+            const replacementTree = parser.parse(replacement);
+            const searchTree = parser.parse(searchPart);
+
+            const replacementEntities = findDeclaredEntities(replacementTree.rootNode);
+            const searchEntities = findDeclaredEntities(searchTree.rootNode);
+            const allEntities = [...replacementEntities, ...searchEntities];
+
+            let targetNode: Parser.SyntaxNode | null = null;
+            for (const ent of allEntities) {
+              targetNode = findMatchingNode(wholeTree.rootNode, ent.type, ent.name);
+              if (targetNode) {
+                break;
+              }
+            }
+
+            if (targetNode) {
+              const startByte = targetNode.startIndex;
+              const endByte = targetNode.endIndex;
+              const updatedContent = currentContent.slice(0, startByte) + replacement + currentContent.slice(endByte);
+
+              const dryRunTree = parser.parse(updatedContent);
+              if (!hasSyntaxError(dryRunTree.rootNode)) {
+                newContent = updatedContent;
+                strategy = "AST-Node Replacement (Tier 3)";
+              } else {
+                yield* Effect.logWarning(`  ⚠️ [AST REJECT] Block ${i + 1} AST replacement generated syntax errors.`);
+              }
+            }
+          } catch (e) {
+            yield* Effect.logWarning(`  ⚠️ [AST FAIL] Failed to execute AST matcher: ${String(e)}`);
+          }
+        }
+
         if (newContent !== null) {
           currentContent = newContent;
           yield* Effect.logInfo(`  ✨ [SUCCESS] Block ${i + 1} applied via: ${strategy}`);
-                } else {
+        } else {
           yield* Effect.logError(`  ❌ [FAIL] Block ${i + 1} failed to match in "${filePath}".`);
           const actualContext = findClosestMatchContext(currentContent, searchPart);
           return yield* Effect.fail(

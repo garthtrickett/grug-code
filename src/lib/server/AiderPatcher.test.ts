@@ -13,6 +13,7 @@ import {
   parseDiffBlocks,
   applyDiffs,
 } from "./AiderPatcher";
+import { TreeSitterParserLive } from "./TreeSitterParser";
 
 describe("AiderPatcher - Text Matching Waterfall Tests", () => {
   it("should prep strings cleanly", () => {
@@ -97,7 +98,7 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
       ]
     });
 
-    const runner = applyDiffs(patchJson);
+        const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
     const success = await Effect.runPromise(runner);
     expect(success).toBe(true);
 
@@ -125,7 +126,7 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
       ]
     });
 
-    const runner = applyDiffs(patchJson);
+        const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
 
     try {
       await Effect.runPromise(runner);
@@ -137,6 +138,93 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
       expect(error.actualContextSnippet).toContain("const b = 2;");
       expect(error.actualContextSnippet).toContain("const a = 1;");
       expect(error.actualContextSnippet).toContain("const c = 3;");
+    }
+
+    await fs.unlink(tempFile);
+  });
+
+  it("should successfully apply a Tier 3 AST-Node replacement when search block has malformed indentation/comments", async () => {
+    const tempFile = path.join(process.cwd(), `aider-temp-ast-${crypto.randomUUID()}.txt`);
+    const initialContent = [
+      "export function calcPrice(price: number): number {",
+      "  // original comment here",
+      "  const tax = price * 0.1;",
+      "  return price + tax;",
+      "}"
+    ].join("\n");
+
+    await fs.writeFile(tempFile, initialContent, "utf-8");
+
+    const patchJson = JSON.stringify({
+      summary: "Apply AST replacement",
+      files: [
+        {
+          file_path: tempFile,
+          code_diff: [
+            "\n<<<<<<< SEARCH",
+            "export function calcPrice(price: number): number {",
+            "         // completely broken comments and spacing",
+            "  const tax = price * 99999;",
+            "}",
+            "=======",
+            "export function calcPrice(price: number): number {",
+            "  const tax = price * 0.15;",
+            "  return price + tax;",
+            "}",
+            ">>>>>>> REPLACE\n"
+          ].join("\n")
+        }
+      ]
+    });
+
+    const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
+    const success = await Effect.runPromise(runner);
+    expect(success).toBe(true);
+
+    const updatedContent = await fs.readFile(tempFile, "utf-8");
+    expect(updatedContent).toContain("const tax = price * 0.15;");
+
+    await fs.unlink(tempFile);
+  });
+
+  it("should reject Tier 3 AST replacement if it generates syntax error nodes", async () => {
+    const tempFile = path.join(process.cwd(), `aider-temp-ast-err-${crypto.randomUUID()}.txt`);
+    const initialContent = [
+      "export function calcPrice(price: number): number {",
+      "  const tax = price * 0.1;",
+      "  return price + tax;",
+      "}"
+    ].join("\n");
+
+    await fs.writeFile(tempFile, initialContent, "utf-8");
+
+    const patchJson = JSON.stringify({
+      summary: "Apply broken AST replacement",
+      files: [
+        {
+          file_path: tempFile,
+          code_diff: [
+            "\n<<<<<<< SEARCH",
+            "export function calcPrice(price: number): number {",
+            "  const tax = price * 99999;",
+            "}",
+            "=======",
+            "export function calcPrice(price: number): number {",
+            "  const tax = price * 0.15;",
+            "  return price + tax;",
+            "// unclosed brace here",
+            ">>>>>>> REPLACE\n"
+          ].join("\n")
+        }
+      ]
+    });
+
+    const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
+    try {
+      await Effect.runPromise(runner);
+      throw new Error("Expected to fail");
+    } catch (error: any) {
+      expect(error._tag).toBe("PatchApplicationError");
     }
 
     await fs.unlink(tempFile);

@@ -29,10 +29,12 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-  .post("/patch", async ({ body, runEffect, set }) => {
+    .post("/patch", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const patchPayload = typeof body.patch === "string" ? body.patch : JSON.stringify(body.patch);
-    const effect = controller.applyPatch(body.tx, patchPayload);
+    const effect = controller.applyPatch(body.tx, patchPayload).pipe(
+      Effect.provide(TreeSitterParserLive)
+    );
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
