@@ -63,6 +63,44 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(hlcSignal.peek().physical).toBeGreaterThanOrEqual(initialHlcValue);
   });
 
+  it("should format initialization payloads with subfolder scopes correctly on initTaskQueue", async () => {
+    const mockTx = {
+      id: "task-scoped-001",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/task-scoped-001",
+      checkpoints: [],
+    };
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockTx,
+    });
+    global.fetch = fetchSpy as any;
+
+    const action = taskStore.initTaskQueue(
+      "task-scoped-001",
+      "Create button",
+      ["src/components/Button.ts"],
+      "/mock/cwd",
+      "src/components"
+    );
+    await runClientPromise(action);
+
+    // Verify the mock fetch options are formatted properly
+    expect(fetchSpy).toHaveBeenCalled();
+    const fetchArgs = fetchSpy.mock.calls[0];
+    expect(fetchArgs).toBeDefined();
+    if (fetchArgs) {
+      const url = fetchArgs[0];
+      const options = fetchArgs[1] as any;
+      expect(url).toBe("/api/workspace/init");
+      const parsedBody = JSON.parse(options.body);
+      expect(parsedBody.cwd).toBe("/mock/cwd/src/components");
+      expect(parsedBody.taskId).toBe("task-scoped-001");
+    }
+  });
+
   it("should handle error messages returned from failed workspace initializations", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,

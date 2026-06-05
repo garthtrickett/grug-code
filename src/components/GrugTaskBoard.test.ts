@@ -72,6 +72,22 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(form).not.toBeNull();
   });
 
+  it("should render the directory scope dropdown when activeTxSignal is null", async () => {
+    const dirMod = await import("../lib/client/stores/directoryStore");
+    dirMod.directoriesSignal.value = ["apps/web", "packages/core"];
+
+    await element.updateComplete;
+    await tick();
+
+    const selectLabel = Array.from(element.querySelectorAll("label")).find(
+      (el: any) => el.textContent?.trim().includes("Workspace Scope")
+    );
+    expect(selectLabel).toBeDefined();
+
+    const triggerBtn = element.querySelector("button[role='combobox']");
+    expect(triggerBtn).not.toBeNull();
+  });
+
   it("should render the active task queue checklist when activeTxSignal is populated", async () => {
     activeTxSignal.value = {
       id: "test-render-tx",

@@ -28,6 +28,7 @@
         "@zag-js/store": "^1.31.0",
         "@zag-js/types": "^1.31.0",
         "@zag-js/utils": "^1.31.0",
+        "@zag-js/vanilla": "^1.31.0",
         "date-fns": "^4.1.0",
         "dotenv": "^17.2.0",
         "effect": "^3.16.12",
@@ -1034,6 +1035,8 @@
     "@zag-js/types": ["@zag-js/types@1.41.1", "", { "dependencies": { "csstype": "3.2.3" } }, "sha512-xhKEX61yvNa/6yofkNe7IihKyt3JLe4/k5JxaH0hj46V4S2Kac2cNAXPgnWHbl1gXGBcfLr+qLFzo4oLl+VdwA=="],
 
     "@zag-js/utils": ["@zag-js/utils@1.41.1", "", {}, "sha512-IZGqDpQYvgCQlGcLTVCzWG5DEz318ZLVJhp8TtT9HPDNd+RJTcVHRja7z+vqQ0Su+wKZkuLlIh5gtraxQ+YX9Q=="],
+
+    "@zag-js/vanilla": ["@zag-js/vanilla@1.41.1", "", { "dependencies": { "@zag-js/core": "1.41.1", "@zag-js/store": "1.41.1", "@zag-js/types": "1.41.1", "@zag-js/utils": "1.41.1" } }, "sha512-ZqdO/BN6zHKcyaSK0jmwW4qtgS+/63rVDXDfPYIcdT3Sx2Myto5vUCXd7htrRtkSDTPvT6183zzU5dUB+RuUrw=="],
 
     "accepts": ["accepts@1.3.8", "", { "dependencies": { "mime-types": "~2.1.34", "negotiator": "0.6.3" } }, "sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw+NACSaeXEQ+NHcVF7rONl6qcaxV3Uuemwawk+7+SJLw=="],
 

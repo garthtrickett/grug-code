@@ -54,17 +54,19 @@ export const taskStore = {
       errorSignal.value = null;
     }),
 
-  initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string) =>
+  initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string) =>
     Effect.gen(function* () {
       errorSignal.value = null;
       yield* clientLog("info", `[taskStore] Initializing task queue for transaction: ${taskId}`);
+
+      const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
 
       const response = yield* Effect.tryPromise({
         try: () =>
           fetch("/api/workspace/init", {
             method: "POST",
             headers: getHeaders(),
-            body: JSON.stringify({ taskId, cwd }),
+            body: JSON.stringify({ taskId, cwd: requestCwd }),
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });

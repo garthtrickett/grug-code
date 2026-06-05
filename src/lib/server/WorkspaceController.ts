@@ -351,7 +351,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
             }
 
             dirs.sort();
-            return dirs as readonly string[];
+            return dirs;
           }),
       };
     };

@@ -92,6 +92,7 @@
     "@zag-js/store": "^1.31.0",
     "@zag-js/types": "^1.31.0",
     "@zag-js/utils": "^1.31.0",
+    "@zag-js/vanilla": "^1.31.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.0",
     "effect": "^3.16.12",

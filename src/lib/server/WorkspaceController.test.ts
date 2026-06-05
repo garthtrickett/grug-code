@@ -127,4 +127,26 @@ Grug applied patch success.
 
     await Effect.runPromise(controller.abortTransaction(tx));
   });
+
+  it("should safely discover subdirectories and respect ignores", async () => {
+    const controller = makeWorkspaceController(tempDir);
+
+    // Populate target directories
+    await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "src/components"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "node_modules"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "node_modules/lodash"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, ".git"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "dist"), { recursive: true });
+
+    const listEffect = controller.listDirectories();
+    const result = await Effect.runPromise(listEffect);
+
+    expect(result).toContain("src");
+    expect(result).toContain("src/components");
+    expect(result).not.toContain("node_modules");
+    expect(result).not.toContain("node_modules/lodash");
+    expect(result).not.toContain("dist");
+    expect(result).not.toContain(".git");
+  });
 });

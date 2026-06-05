@@ -2,6 +2,8 @@ import { LitElement, html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { effect } from "@preact/signals-core";
 import { Effect } from "effect";
+import * as select from "@zag-js/select";
+import { VanillaMachine, normalizeProps } from "@zag-js/vanilla";
 import { runClientUnscoped } from "../lib/client/runtime";
 import { clientLog } from "../lib/client/clientLog";
 import {
@@ -11,10 +13,16 @@ import {
   activeTxSignal,
   errorSignal,
 } from "../lib/client/stores/taskStore";
+import {
+  directoriesSignal,
+  selectedScopeSignal,
+  fetchWorkspaceDirectories,
+} from "../lib/client/stores/directoryStore.ts";
 
 @customElement("grug-task-board")
 export class GrugTaskBoard extends LitElement {
   private _disposeEffect?: () => void;
+    private _selectService: VanillaMachine<select.Context, select.State, select.Event> | null = null;
 
   protected override createRenderRoot() {
     return this; // Render in Light DOM to inherit Tailwind styles
@@ -22,11 +30,18 @@ export class GrugTaskBoard extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+
+    // Load available directories for scoping
+    const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
+    runClientUnscoped(fetchWorkspaceDirectories(cwd));
+
     this._disposeEffect = effect(() => {
       void tasksSignal.value;
       void isPausedSignal.value;
       void activeTxSignal.value;
       void errorSignal.value;
+      void directoriesSignal.value;
+      void selectedScopeSignal.value;
       this.requestUpdate();
     });
   }
@@ -55,7 +70,7 @@ export class GrugTaskBoard extends LitElement {
 
     runClientUnscoped(
       Effect.gen(function* () {
-        yield* taskStore.initTaskQueue(taskId, description, targetFiles, cwd);
+        yield* taskStore.initTaskQueue(taskId, description, targetFiles, cwd, selectedScopeSignal.value);
       }).pipe(
         Effect.catchAll((err) =>
           clientLog("error", `[GrugTaskBoard] Failed to start task queue: ${this.getErrorMessage(err)}`)
@@ -121,6 +136,107 @@ export class GrugTaskBoard extends LitElement {
     void runClientUnscoped(clientLog("info", `[GrugTaskBoard] Removed step ${taskId} from pending queue`));
   };
 
+  private getSelectApi() {
+    const items = directoriesSignal.value;
+    const itemsWithRoot = ["", ...items];
+
+    if (!this._selectService) {
+      const collection = select.collection({
+        items: itemsWithRoot,
+        itemToString: (item) => item || "Whole Project Root",
+        itemToValue: (item) => item,
+      });
+
+            this._selectService = new VanillaMachine(select.machine, {
+        id: "directory-scope-select",
+        collection,
+        value: selectedScopeSignal.value ? [selectedScopeSignal.value] : [],
+        onValueChange(details: select.ValueChangeDetails<string>) {
+          selectedScopeSignal.value = details.value[0] || "";
+        },
+      });
+
+      this._selectService.start();
+
+      this._selectService.subscribe(() => {
+        this.requestUpdate();
+      });
+    } else {
+      const collection = select.collection({
+        items: itemsWithRoot,
+        itemToString: (item) => item || "Whole Project Root",
+        itemToValue: (item) => item,
+      });
+      if (this._selectService.setContext) {
+        this._selectService.setContext({ collection });
+      }
+    }
+
+    return select.connect(this._selectService.service, normalizeProps);
+  }
+
+  private renderSelect() {
+    const api = this.getSelectApi();
+    const directories = ["", ...directoriesSignal.value];
+
+    return html`
+      <div class="space-y-1 relative" id=${api.getRootProps().id}>
+        <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block" id=${api.getLabelProps().id}>
+          Workspace Scope / Subdirectory
+        </label>
+        <div class="relative">
+          <button
+            type="button"
+            id=${api.getTriggerProps().id}
+            role="combobox"
+            aria-expanded=${api.getTriggerProps()["aria-expanded"]}
+            aria-controls=${api.getTriggerProps()["aria-controls"]}
+            @click=${() => {
+              if (api.open) {
+                api.setOpen(false);
+              } else {
+                api.setOpen(true);
+              }
+            }}
+            class="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 text-sm focus:outline-none focus:border-zinc-650 cursor-pointer"
+          >
+            <span>${selectedScopeSignal.value || "Whole Project Root"}</span>
+            <span class="text-zinc-500 text-xs">▼</span>
+          </button>
+        </div>
+
+        ${api.open
+          ? html`
+              <ul
+                id=${api.getContentProps().id}
+                role="listbox"
+                class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded border border-zinc-850 bg-zinc-950 py-1 shadow-lg text-sm text-zinc-200"
+              >
+                ${directories.map((dir) => {
+                  const optionProps = api.getItemProps({ item: dir });
+                  const isSelected = selectedScopeSignal.value === dir;
+                  return html`
+                    <li
+                      id=${optionProps.id}
+                      role="option"
+                      aria-selected=${isSelected}
+                      @click=${() => {
+                        selectedScopeSignal.value = dir;
+                        api.setOpen(false);
+                      }}
+                      class="relative cursor-pointer select-none py-2 px-3 hover:bg-zinc-900 transition-colors ${isSelected ? "bg-zinc-900 font-semibold text-white" : ""}"
+                    >
+                      ${dir || "Whole Project Root"}
+                    </li>
+                  `;
+                })}
+              </ul>
+            `
+          : ""}
+      </div>
+    `;
+  }
+
   override render() {
     const tx = activeTxSignal.value;
     const error = errorSignal.value;
@@ -172,6 +288,9 @@ export class GrugTaskBoard extends LitElement {
                       />
                     </div>
                   </div>
+
+                  <!-- Zag.js Workspace Directory Scoping -->
+                  ${this.renderSelect()}
 
                   <div class="space-y-1">
                     <label for="description" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Feature Description</label>
