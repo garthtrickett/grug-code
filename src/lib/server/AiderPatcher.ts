@@ -657,8 +657,12 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
             }
 
             if (targetNode) {
-              const startByte = targetNode.startIndex;
-              const endByte = targetNode.endIndex;
+              let nodeToReplace = targetNode;
+              if (targetNode.parent && targetNode.parent.type === "export_statement") {
+                nodeToReplace = targetNode.parent;
+              }
+              const startByte = nodeToReplace.startIndex;
+              const endByte = nodeToReplace.endIndex;
               const updatedContent = currentContent.slice(0, startByte) + replacement + currentContent.slice(endByte);
 
               const dryRunTree = parser.parse(updatedContent);
@@ -692,7 +696,7 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
         }
       }
 
-            // Verify syntactic correctness of the entire resulting file
+      // Verify syntactic correctness of the entire resulting file
       const isTsOrJs = /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(filePath);
       if (parser && isTsOrJs) {
         const finalTree = parser.parse(currentContent);

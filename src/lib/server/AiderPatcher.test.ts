@@ -128,10 +128,10 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
 
     const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
 
-    try {
-      await Effect.runPromise(runner);
-      throw new Error("Expected to fail");
-    } catch (error: any) {
+    const result = await Effect.runPromise(Effect.either(runner));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      const error: any = result.left;
       expect(error._tag).toBe("PatchApplicationError");
       expect(error.failedSearchBlock).toContain("const x = 999;");
       expect(error.proposedReplacement).toContain("const abc = 123;");
@@ -143,7 +143,7 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     await fs.unlink(tempFile);
   });
 
-    it("should successfully apply a Tier 3 AST-Node replacement when search block has malformed indentation/comments", async () => {
+  it("should successfully apply a Tier 3 AST-Node replacement when search block has malformed indentation/comments", async () => {
     const tempFile = path.join(process.cwd(), `aider-temp-ast-${crypto.randomUUID()}.ts`);
     const initialContent = [
       "export function calcPrice(price: number): number {",
@@ -187,7 +187,7 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     await fs.unlink(tempFile);
   });
 
-    it("should reject Tier 3 AST replacement if it generates syntax error nodes", async () => {
+  it("should reject Tier 3 AST replacement if it generates syntax error nodes", async () => {
     const tempFile = path.join(process.cwd(), `aider-temp-ast-err-${crypto.randomUUID()}.ts`);
     const initialContent = [
       "export function calcPrice(price: number): number {",
@@ -209,10 +209,10 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
             "  const tax = price * 99999;",
             "}",
             "=======",
-            "export function calcPrice(price: number): number {",
-            "  const tax = price * 0.15;",
+                        "export function calcPrice(price: number): number {",
+            "  const tax = price * {0.15;",
             "  return price + tax;",
-            "// unclosed brace here",
+            "}",
             ">>>>>>> REPLACE\n"
           ].join("\n")
         }
@@ -220,10 +220,10 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     });
 
     const runner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
-    try {
-      await Effect.runPromise(runner);
-      throw new Error("Expected to fail");
-    } catch (error: any) {
+    const result = await Effect.runPromise(Effect.either(runner));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      const error: any = result.left;
       expect(error._tag).toBe("PatchApplicationError");
     }
 
