@@ -19,9 +19,9 @@ export default defineConfig(({ command, mode }) => ({
         type: "module",
       },
       manifest: {
-        name: "Bedrock Language Learning",
-        short_name: "Bedrock Lang",
-        description: "Zero-latency, offline-first contextual language acquisition",
+        name: "Grug Code",
+        short_name: "GC",
+        description: "Coding Agent",
         start_url: "/",
         display: "standalone",
         background_color: "#09090b",

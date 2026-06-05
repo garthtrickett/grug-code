@@ -37,7 +37,7 @@ export class AppLayout extends LitElement {
       <div class="flex h-screen flex-col overflow-hidden bg-zinc-900 text-zinc-100 font-sans">
         <header class="z-10 flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-6 py-4 shadow-md">
           <div class="flex items-center gap-4">
-            <a href="/" class="text-lg font-bold text-zinc-50 tracking-tight hover:text-white transition-colors">Bedrock Lang</a>
+            <a href="/" class="text-lg font-bold text-zinc-50 tracking-tight hover:text-white transition-colors">Grug Code</a>
           </div>
           <div class="flex items-center gap-4 text-sm font-medium text-zinc-400">
             <span>${t("common.language")}: ${localeState.value.toUpperCase()}</span>

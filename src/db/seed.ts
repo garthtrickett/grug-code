@@ -35,7 +35,7 @@ export const seedDb = () =>
           .insertInto('platform_admin')
           .values({
             id: SUPER_ADMIN_ID,
-            email: 'super-admin@bedrock.com',
+            email: 'super-admin@grug-code.com',
             password_hash: hashedPassword,
             created_at: new Date(),
           })

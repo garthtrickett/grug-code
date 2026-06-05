@@ -6,7 +6,7 @@ import type { Database } from "../types";
 
 config({ path: ".env" });
 
-export const TEMPLATE_DB_NAME = "bedrock_lang_test_template";
+export const TEMPLATE_DB_NAME = "grug_code_test_template";
 
 function getConnectionString(dbName: string) {
   const base = process.env.DATABASE_URL_TEST || process.env.DATABASE_URL;

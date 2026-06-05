@@ -1,6 +1,6 @@
 {
-  "name": "bedrock-lang",
-  "description": "A local-first language acquisition platform using Effect, Lit, and a custom offline sync queue.",
+  "name": "grug-code",
+  "description": "coding agent",
   "type": "module",
   "version": "0.1.0",
   "scripts": {

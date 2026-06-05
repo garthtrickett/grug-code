@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { Hlc, packHlc, tickHlc, receiveHlc, initHlc } from "../../shared/hlc";
 import { clientLog } from "../clientLog";
 
-const DB_NAME = "bedrock-lang-hlc-v1";
+const DB_NAME = "grug-code-hlc-v1";
 const STORE_NAME = "hlc_metadata";
 const hlcDBStore = createStore(DB_NAME, STORE_NAME);
 

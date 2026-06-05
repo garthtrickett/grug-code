@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
+import { applyDiffs } from "./AiderPatcher";
 
 export interface DirtyFile {
   readonly filePath: string;
@@ -42,7 +43,7 @@ const runCommand = (args: string[], cwd?: string) =>
       let stdout = "";
       let stderr = "";
       
-            child.stdout?.on("data", (chunk: unknown) => {
+      child.stdout?.on("data", (chunk: unknown) => {
         if (Buffer.isBuffer(chunk)) {
           stdout += chunk.toString("utf-8");
         } else if (typeof chunk === "string") {
@@ -140,28 +141,13 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
     applyPatch: (tx: GitTransaction, patch: string) =>
       Effect.gen(function* () {
-        yield* Effect.logInfo(`[WorkspaceController] Applying incoming unified patch for transaction: ${tx.id}`);
-        const patchFile = `.grug-patch-${tx.id}.patch`;
-        const patchPath = cwd ? `${cwd}/${patchFile}` : patchFile;
+        yield* Effect.logInfo(`[WorkspaceController] Applying incoming Aider patch for transaction: ${tx.id}`);
+        
+        yield* applyDiffs(patch, cwd).pipe(
+          Effect.mapError((err) => new Error(`Failed to apply patch natively: ${err.message}`))
+        );
 
-        yield* Effect.tryPromise({
-          try: () => fs.writeFile(patchPath, patch, "utf-8"),
-          catch: (e) => new Error(`Failed to write local patch file: ${String(e)}`),
-        });
-
-        const applyCmd = yield* runCommand(["git", "apply", patchFile], cwd);
-
-        yield* Effect.tryPromise({
-          try: () => fs.unlink(patchPath),
-          catch: (e) => new Error(`Failed to remove patch file: ${String(e)}`),
-        }).pipe(Effect.catchAll(() => Effect.void));
-
-        if (applyCmd.exitCode !== 0) {
-          yield* Effect.logError(`[WorkspaceController] Git apply failed: ${applyCmd.stderr}`);
-          return yield* Effect.fail(new Error(`Failed to apply patch: ${applyCmd.stderr}`));
-        }
-
-        yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly.");
+        yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),
 
     runTypeCheck: (_tx: GitTransaction) =>

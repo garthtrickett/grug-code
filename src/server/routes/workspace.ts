@@ -25,6 +25,37 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
+  .post("/patch", async ({ body, runEffect, set }) => {
+    const controller = makeWorkspaceController(body.cwd);
+    const patchPayload = typeof body.patch === "string" ? body.patch : JSON.stringify(body.patch);
+    const effect = controller.applyPatch(body.tx, patchPayload);
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: res.left.message };
+    }
+    return { success: true };
+  }, {
+    body: t.Object({
+      tx: t.Object({
+        id: t.String(),
+        baseBranch: t.String(),
+        ephemeralBranch: t.String(),
+        checkpoints: t.Array(t.String())
+      }),
+      patch: t.Union([
+        t.String(),
+        t.Object({
+          summary: t.Optional(t.String()),
+          files: t.Array(t.Object({
+            file_path: t.String(),
+            code_diff: t.String()
+          }))
+        })
+      ]),
+      cwd: t.Optional(t.String())
+    })
+  })
   .post("/verify", async ({ body, runEffect, set }) => {
     const type = body.type;
     const effect = type === "typecheck" 

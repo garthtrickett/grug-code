@@ -4,6 +4,7 @@ import { clientLog } from "./clientLog.ts";
 import { LocationService } from "./LocationService.ts";
 import "../../components/LoginView.ts";
 import "../../components/SignupView.ts";
+import "../../components/GrugTaskBoard.ts";
 
 const NotFoundView = (): ViewResult => ({
   template: html`
@@ -33,17 +34,13 @@ type MatchedRoute = Route & { params: string[] };
 const homeView = (): ViewResult => {
   return {
     template: html`
-      <div class="max-w-xl mx-auto py-12 px-6 bg-zinc-950 border border-zinc-800 rounded-lg text-center space-y-4">
-        <div class="inline-flex p-4 bg-green-500/10 text-green-500 rounded-full">
-          <span class="text-3xl">🥟</span>
+      <div class="space-y-6">
+        <div class="max-w-xl mx-auto py-4 text-center">
+          <h1 class="text-2xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
+            <span>🥟</span> Grug Code Companion
+          </h1>
         </div>
-        <h1 class="text-2xl font-bold">Grug Code</h1>
-        <p class="text-zinc-400 text-sm">
-          Welcome to your local-first AI software development companion.
-        </p>
-        <div class="p-4 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-400 leading-relaxed font-mono">
-          System operational. All background runtimes and logical clocks active.
-        </div>
+        <grug-task-board></grug-task-board>
       </div>
     `
   };

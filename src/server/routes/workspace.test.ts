@@ -13,7 +13,6 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
   const originalCwd = process.cwd();
 
   beforeEach(async () => {
-    // Prepare temporary repository for HTTP mock testing
     tempDir = path.join(originalCwd, `.grug-api-test-${crypto.randomUUID()}`);
     await fs.mkdir(tempDir, { recursive: true });
     
@@ -26,7 +25,6 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
     await execPromise("git add initial.txt", { cwd: tempDir });
     await execPromise("git commit -m 'initial api commit'", { cwd: tempDir });
 
-    // Temporarily change process.cwd() so the controller points to our test repo
     process.chdir(tempDir);
   });
 
@@ -51,24 +49,59 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
     expect(data.error).toContain("Unauthorized");
   });
 
-  it("should accept requests with the valid token and spawn transaction", async () => {
+  it("should accept requests with the valid token and apply patches natively", async () => {
     const token = getActiveToken();
-    const response = await app.handle(
+    
+    const initResponse = await app.handle(
       new Request("http://localhost/api/workspace/init", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Grug-Token": token,
         },
-        body: JSON.stringify({ taskId: "api-task-id" }),
+        body: JSON.stringify({ taskId: "api-patch-task-id" }),
       })
     );
 
-    expect(response.status).toBe(200);
-    const tx = await response.json();
-    expect(tx.ephemeralBranch).toBe("grug-task/api-task-id");
+    expect(initResponse.status).toBe(200);
+    const tx = await initResponse.json();
+    expect(tx.ephemeralBranch).toBe("grug-task/api-patch-task-id");
 
-    // Abort to clean up git state
+    const patchResponse = await app.handle(
+      new Request("http://localhost/api/workspace/patch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          tx,
+          patch: {
+            summary: "Update original file",
+            files: [
+              {
+                file_path: "initial.txt",
+                code_diff: `
+<<<<<<< SEARCH
+Original codebase line.
+=======
+Patched via REST API.
+>>>>>>> REPLACE
+`
+              }
+            ]
+          }
+        }),
+      })
+    );
+
+    expect(patchResponse.status).toBe(200);
+    const patchResult = await patchResponse.json();
+    expect(patchResult.success).toBe(true);
+
+    const content = await fs.readFile(path.join(tempDir, "initial.txt"), "utf-8");
+    expect(content).toBe("Patched via REST API.\n");
+
     const abortResponse = await app.handle(
       new Request("http://localhost/api/workspace/abort", {
         method: "POST",

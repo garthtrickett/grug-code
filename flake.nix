@@ -32,7 +32,7 @@
           ];
 
           shellHook = ''
-            echo "🚀 Bedrock Language App Development Environment Loaded"
+            echo "🚀 Grug Code Development Environment Loaded"
             echo "Bun: $(bun --version)"
             echo "Node: $(node --version)"
             

@@ -14,7 +14,7 @@ function getConnectionString(dbName: string = "postgres") {
 
 export async function setupWorkerDb(workerId: number | string): Promise<string> {
   const id = workerId ?? "main";
-  const dbName = `bedrock_lang_test_${id}`;
+  const dbName = `grug_code_test_${id}`;
   const adminUrl = getConnectionString("postgres");
 
   const adminPool = new Pool({ 
@@ -38,7 +38,7 @@ export async function setupWorkerDb(workerId: number | string): Promise<string> 
 
 export async function teardownWorkerDb(workerId: number | string) {
   const id = workerId ?? "main";
-  const dbName = `bedrock_lang_test_${id}`;
+  const dbName = `grug_code_test_${id}`;
   const adminUrl = getConnectionString("postgres");
   
   const adminPool = new Pool({ 

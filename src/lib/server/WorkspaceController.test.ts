@@ -12,41 +12,34 @@ describe("WorkspaceController - Git Transaction Core", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    // Create an isolated temp directory for running safe git simulations
     tempDir = path.join(process.cwd(), `.grug-temp-test-${crypto.randomUUID()}`);
     await fs.mkdir(tempDir, { recursive: true });
 
-    // Initialize Git in test directory
     await execPromise("git init", { cwd: tempDir });
     await execPromise("git config user.name 'Grug Test'", { cwd: tempDir });
     await execPromise("git config user.email 'grug@test.com'", { cwd: tempDir });
     await execPromise("git config commit.gpgSign false", { cwd: tempDir });
 
-    // Create an initial commit with standard trailing newline
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Grug initialize codebase.\n");
     await execPromise("git add initial.txt", { cwd: tempDir });
     await execPromise("git commit -m 'initial commit'", { cwd: tempDir });
   });
 
   afterEach(async () => {
-    // Cleanup test directory safely
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
   it("should initiate transaction only if workspace status is clean", async () => {
     const controller = makeWorkspaceController(tempDir);
 
-    // 1. First run on clean workspace
     const runClean = controller.initTransaction("task-123");
     const tx = await Effect.runPromise(runClean);
     expect(tx.baseBranch).toBeDefined();
     expect(tx.ephemeralBranch).toBe("grug-task/task-123");
 
-    // Cleanup task branch before proceeding
     await execPromise(`git checkout ${tx.baseBranch}`, { cwd: tempDir });
     await execPromise(`git branch -D ${tx.ephemeralBranch}`, { cwd: tempDir });
 
-    // 2. Introduce dirty files
     await fs.writeFile(path.join(tempDir, "dirty.txt"), "Dirty untracked file.\n");
 
     const runDirty = controller.initTransaction("task-456");
@@ -57,7 +50,6 @@ describe("WorkspaceController - Git Transaction Core", () => {
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-789"));
 
-    // Modify file
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Grug edit 1.\n");
     const tx2 = await Effect.runPromise(controller.createCheckpoint(tx, "edit 1"));
 
@@ -69,7 +61,6 @@ describe("WorkspaceController - Git Transaction Core", () => {
 
     expect(tx3.checkpoints.length).toBe(2);
 
-    // Cleanup
     await Effect.runPromise(controller.abortTransaction(tx3));
   });
 
@@ -84,7 +75,6 @@ describe("WorkspaceController - Git Transaction Core", () => {
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Second change.\n");
     const checkpoint2 = await Effect.runPromise(controller.createCheckpoint(checkpoint1, "c2"));
 
-    // Rollback back to checkpoint 1
     const rolledBackTx = await Effect.runPromise(controller.rollbackToCheckpoint(checkpoint2, hash1));
     expect(rolledBackTx.checkpoints.length).toBe(1);
 
@@ -103,11 +93,9 @@ describe("WorkspaceController - Git Transaction Core", () => {
 
     await Effect.runPromise(controller.commitTransaction(finalTx));
 
-    // Check file content is merged in base branch
     const baseContent = await fs.readFile(path.join(tempDir, "initial.txt"), "utf-8");
     expect(baseContent).toBe("Merged changes content.\n");
 
-    // Check ephemeral branch is deleted
     const branches = await execPromise("git branch", { cwd: tempDir });
     expect(branches.stdout.includes(tx.ephemeralBranch)).toBe(false);
   });
@@ -116,16 +104,23 @@ describe("WorkspaceController - Git Transaction Core", () => {
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-patch"));
 
-    // Generate a standard unified diff patch
-    const patchContent = `diff --git a/initial.txt b/initial.txt
---- a/initial.txt
-+++ b/initial.txt
-@@ -1,1 +1,1 @@
--Grug initialize codebase.
-+Grug applied patch success.
-`;
+    const patchPayload = JSON.stringify({
+      summary: "Apply test patch",
+      files: [
+        {
+          file_path: "initial.txt",
+          code_diff: `
+<<<<<<< SEARCH
+Grug initialize codebase.
+=======
+Grug applied patch success.
+>>>>>>> REPLACE
+`
+        }
+      ]
+    });
 
-    await Effect.runPromise(controller.applyPatch(tx, patchContent));
+    await Effect.runPromise(controller.applyPatch(tx, patchPayload));
 
     const content = await fs.readFile(path.join(tempDir, "initial.txt"), "utf-8");
     expect(content).toBe("Grug applied patch success.\n");

@@ -20,7 +20,7 @@ const getLogLevelFromEnv = (): LogLevel.LogLevel => {
 const otlpProviderLayer = Otlp.layer({
   baseUrl: process.env.OTLP_BASE_URL || "http://localhost:4318",
   resource: {
-    serviceName: "bedrock-lang-backend",
+    serviceName: "grug-code-backend",
     serviceVersion: "0.1.0",
   },
   loggerExportInterval: "1 second",

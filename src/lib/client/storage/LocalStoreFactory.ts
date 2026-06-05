@@ -3,7 +3,7 @@ import { createStore, get, set, del } from "idb-keyval";
 import { Effect } from "effect";
 import { clientLog } from "../clientLog";
 
-const DB_NAME = "bedrock-lang-storage-v1";
+const DB_NAME = "grug-code-storage-v1";
 const STORE_NAME = "collections";
 const localDBStore = createStore(DB_NAME, STORE_NAME);
 
