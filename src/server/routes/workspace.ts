@@ -40,10 +40,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     if (res._tag === "Left") {
       set.status = 400;
       const error = res.left;
-      if (error instanceof PatchApplicationError) {
+            if (error instanceof PatchApplicationError) {
         return {
           error: error.message,
-          filePath: error.path,
+          filePath: error.path && body.cwd ? path.relative(body.cwd, error.path) : error.path,
           failedSearchBlock: error.failedSearchBlock,
           proposedReplacement: error.proposedReplacement,
           actualContextSnippet: error.actualContextSnippet,

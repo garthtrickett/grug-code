@@ -644,8 +644,16 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
             const replacementTree = parser.parse(replacement);
             const searchTree = parser.parse(searchPart);
 
-            const replacementEntities = findDeclaredEntities(replacementTree.rootNode);
-            const searchEntities = findDeclaredEntities(searchTree.rootNode);
+            let replacementEntities = findDeclaredEntities(replacementTree.rootNode);
+            let searchEntities = findDeclaredEntities(searchTree.rootNode);
+
+            if (replacementEntities.length === 0 && searchEntities.length === 0) {
+              const wrappedReplacementTree = parser.parse(`class _DummyClassForParsing {\n${replacement}\n}`);
+              const wrappedSearchTree = parser.parse(`class _DummyClassForParsing {\n${searchPart}\n}`);
+              replacementEntities = findDeclaredEntities(wrappedReplacementTree.rootNode);
+              searchEntities = findDeclaredEntities(wrappedSearchTree.rootNode);
+            }
+
             const allEntities = [...replacementEntities, ...searchEntities];
 
             let targetNode: Parser.SyntaxNode | null = null;

@@ -209,7 +209,7 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
             "  const tax = price * 99999;",
             "}",
             "=======",
-                        "export function calcPrice(price: number): number {",
+            "export function calcPrice(price: number): number {",
             "  const tax = price * {0.15;",
             "  return price + tax;",
             "}",
@@ -226,6 +226,53 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
       const error: any = result.left;
       expect(error._tag).toBe("PatchApplicationError");
     }
+
+    await fs.unlink(tempFile);
+  });
+
+  it("should successfully apply a Tier 3 AST-Node replacement on method definition with messy indentation", async () => {
+    const tempFile = path.join(process.cwd(), `aider-temp-ast-method-${crypto.randomUUID()}.ts`);
+    const initialContent = [
+      "export class Worker {",
+      "  constructor() {",
+      "    console.log('Worker initialized');",
+      "  }",
+      "  public executeWork(amount: number): number {",
+      "    return amount * 2;",
+      "  }",
+      "}"
+    ].join("\n");
+
+    await fs.writeFile(tempFile, initialContent, "utf-8");
+
+    const patchJson = JSON.stringify({
+      summary: "Apply AST replacement to class method",
+      files: [
+        {
+          file_path: tempFile,
+          code_diff: [
+            "\n<<<<<<< SEARCH",
+            "  public executeWork(amount: number): number {",
+            "         // messy indentation here",
+            "    return amount * 99999;",
+            "  }",
+            "=======",
+            "  public executeWork(amount: number): number {",
+            "    return amount * 10;",
+            "  }",
+            ">>>>>>> REPLACE\n"
+          ].join("\n")
+        }
+      ]
+    });
+    
+    // Direct invocation mapping
+    const directRunner = applyDiffs(patchJson).pipe(Effect.provide(TreeSitterParserLive));
+    const success = await Effect.runPromise(directRunner);
+    expect(success).toBe(true);
+
+    const updatedContent = await fs.readFile(tempFile, "utf-8");
+    expect(updatedContent).toContain("return amount * 10;");
 
     await fs.unlink(tempFile);
   });
