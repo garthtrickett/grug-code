@@ -29,7 +29,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-    .post("/patch", async ({ body, runEffect, set }) => {
+      .post("/patch", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const patchPayload = typeof body.patch === "string" ? body.patch : JSON.stringify(body.patch);
     const effect = controller.applyPatch(body.tx, patchPayload).pipe(
@@ -38,7 +38,23 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
-      return { error: res.left.message };
+      const error = res.left;
+      if (
+        error &&
+        typeof error === "object" &&
+        "_tag" in error &&
+        error._tag === "PatchApplicationError"
+      ) {
+        const errObj = error as any;
+        return {
+          error: errObj.message,
+          filePath: errObj.path,
+          failedSearchBlock: errObj.failedSearchBlock,
+          proposedReplacement: errObj.proposedReplacement,
+          actualContextSnippet: errObj.actualContextSnippet,
+        };
+      }
+      return { error: (error as Error).message };
     }
     return { success: true };
   }, {

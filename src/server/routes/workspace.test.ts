@@ -102,6 +102,67 @@ Patched via REST API.
     const content = await fs.readFile(path.join(tempDir, "initial.txt"), "utf-8");
     expect(content).toBe("Patched via REST API.\n");
 
+        const abortResponse = await app.handle(
+      new Request("http://localhost/api/workspace/abort", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ tx }),
+      })
+    );
+    expect(abortResponse.status).toBe(200);
+  });
+
+  it("should return a structured 400 error with diagnostic metadata on mismatched patch requests", async () => {
+    const token = getActiveToken();
+
+    const initResponse = await app.handle(
+      new Request("http://localhost/api/workspace/init", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ taskId: "api-mismatch-task-id" }),
+      })
+    );
+
+    expect(initResponse.status).toBe(200);
+    const tx = await initResponse.json();
+
+    const patchResponse = await app.handle(
+      new Request("http://localhost/api/workspace/patch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          tx,
+          patch: {
+            summary: "Mismatched update",
+            files: [
+              {
+                file_path: "initial.txt",
+                code_diff: `\n<<<<<<< SEARCH\nThis line is totally wrong and doesn't exist on disk.\n=======\nLine after replacement.\n>>>>>>> REPLACE\n`
+              }
+            ]
+          }
+        }),
+      })
+    );
+
+    expect(patchResponse.status).toBe(400);
+    const result = await patchResponse.json();
+
+    expect(result.error).toContain("failed to match");
+    expect(result.filePath).toBe("initial.txt");
+    expect(result.failedSearchBlock).toContain("This line is totally wrong");
+    expect(result.proposedReplacement).toContain("Line after replacement.");
+    expect(result.actualContextSnippet).toContain("Original codebase line.");
+
     const abortResponse = await app.handle(
       new Request("http://localhost/api/workspace/abort", {
         method: "POST",
