@@ -139,13 +139,11 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    applyPatch: (tx: GitTransaction, patch: string) =>
+        applyPatch: (tx: GitTransaction, patch: string) =>
       Effect.gen(function* () {
         yield* Effect.logInfo(`[WorkspaceController] Applying incoming Aider patch for transaction: ${tx.id}`);
         
-        yield* applyDiffs(patch, cwd).pipe(
-          Effect.mapError((err) => new Error(`Failed to apply patch natively: ${err.message}`))
-        );
+        yield* applyDiffs(patch, cwd);
 
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),

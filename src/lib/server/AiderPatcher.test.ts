@@ -104,6 +104,41 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     const updatedContent = await fs.readFile(tempFile, "utf-8");
     expect(updatedContent).toBe("initial content\nupdated line 2\n");
 
+        await fs.unlink(tempFile);
+  });
+
+  it("should capture high-fidelity mismatch diagnostics when search block fails to match", async () => {
+    const tempFile = path.join(process.cwd(), `aider-temp-diag-${crypto.randomUUID()}.txt`);
+    await fs.writeFile(
+      tempFile,
+      "const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n",
+      "utf-8"
+    );
+
+    const patchJson = JSON.stringify({
+      summary: "Apply mismatched update",
+      files: [
+        {
+          file_path: tempFile,
+          code_diff: "\n<<<<<<< SEARCH\nconst a = 1;\nconst b = 999;\nconst c = 3;\n=======\nconst abc = 123;\n>>>>>>> REPLACE\n"
+        }
+      ]
+    });
+
+    const runner = applyDiffs(patchJson);
+
+    try {
+      await Effect.runPromise(runner);
+      throw new Error("Expected to fail");
+    } catch (error: any) {
+      expect(error._tag).toBe("PatchApplicationError");
+      expect(error.failedSearchBlock).toContain("const b = 999;");
+      expect(error.proposedReplacement).toContain("const abc = 123;");
+      expect(error.actualContextSnippet).toContain("const b = 2;");
+      expect(error.actualContextSnippet).toContain("const a = 1;");
+      expect(error.actualContextSnippet).toContain("const c = 3;");
+    }
+
     await fs.unlink(tempFile);
   });
 });

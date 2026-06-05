@@ -5,6 +5,9 @@ import * as path from "node:path";
 export class PatchApplicationError extends Data.TaggedError("PatchApplicationError")<{
   readonly message: string;
   readonly path?: string;
+  readonly failedSearchBlock?: string;
+  readonly proposedReplacement?: string;
+  readonly actualContextSnippet?: string;
 }> {}
 
 export interface PatchFileEntry {
@@ -332,6 +335,44 @@ export function perfectOrWhitespace(
   return null;
 }
 
+export function findClosestMatchContext(
+  whole: string,
+  part: string
+): string {
+  const [_, wholeLines] = prep(whole);
+  const [__, partLines] = prep(part);
+
+  if (wholeLines.length === 0 || partLines.length === 0) {
+    return whole.slice(0, 500);
+  }
+
+  let maxSimilarity = -1;
+  let bestStartIdx = 0;
+  let bestEndIdx = 0;
+
+  const partStr = partLines.join("");
+  const partLen = Math.min(partLines.length, wholeLines.length);
+
+  for (let i = 0; i <= wholeLines.length - partLen; i++) {
+    const chunk = wholeLines.slice(i, i + partLen);
+    const chunkStr = chunk.join("");
+    const matcher = new SequenceMatcher(chunkStr, partStr);
+    const ratio = matcher.ratio();
+    if (ratio > maxSimilarity) {
+      maxSimilarity = ratio;
+      bestStartIdx = i;
+      bestEndIdx = i + partLen;
+    }
+  }
+
+  const blockCenter = Math.floor((bestStartIdx + bestEndIdx) / 2);
+  const windowStart = Math.max(0, blockCenter - 2);
+  const windowEnd = Math.min(wholeLines.length, blockCenter + 3);
+  const contextLines = wholeLines.slice(windowStart, windowEnd);
+
+  return contextLines.join("");
+}
+
 export function replaceMostSimilarChunk(
   whole: string,
   part: string,
@@ -500,12 +541,16 @@ export const applyDiffs = (jsonStr: string, cwd?: string) =>
         if (newContent !== null) {
           currentContent = newContent;
           yield* Effect.logInfo(`  ✨ [SUCCESS] Block ${i + 1} applied via: ${strategy}`);
-        } else {
+                } else {
           yield* Effect.logError(`  ❌ [FAIL] Block ${i + 1} failed to match in "${filePath}".`);
+          const actualContext = findClosestMatchContext(currentContent, searchPart);
           return yield* Effect.fail(
             new PatchApplicationError({
               message: `Block ${i + 1} failed to match. Target snippet could not be matched safely.`,
               path: filePath,
+              failedSearchBlock: searchPart,
+              proposedReplacement: replacement,
+              actualContextSnippet: actualContext,
             })
           );
         }
