@@ -7,6 +7,8 @@ import { makeCommandRunner } from "../../lib/server/CommandRunner";
 import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSitterParser";
 import { extractSkeleton } from "../../lib/server/SkeletalExplorer";
 import { securityMiddleware } from "../middleware/security";
+import { SurgicalRouter, SurgicalRouterLive } from "../../lib/server/SurgicalRouter";
+import { TokenEstimatorLive } from "../../lib/server/TokenEstimator";
 import { effectPlugin } from "../middleware/effect-plugin";
 import { PatchApplicationError } from "../../lib/server/AiderPatcher";
 
@@ -15,6 +17,93 @@ const runner = makeCommandRunner();
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
+    .post("/route-execution", async ({ body, runEffect, set }) => {
+    const rootDir = body.cwd || process.cwd();
+    const resolvedPaths = body.paths.map((p) => {
+      return path.isAbsolute(p) ? p : path.resolve(rootDir, p);
+    });
+
+    const effect = SurgicalRouter.pipe(
+      Effect.flatMap((router) => router.routeExecution(resolvedPaths)),
+      Effect.provide(SurgicalRouterLive),
+      Effect.provide(TokenEstimatorLive)
+    );
+
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: res.left.message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      paths: t.Array(t.String()),
+      cwd: t.Optional(t.String())
+    })
+  })
+  .post("/assemble-anchors", async ({ body, runEffect, set }) => {
+    const effect = Effect.gen(function* () {
+      const getSafeFilePath = (rawPath: string, cwd?: string) =>
+        Effect.gen(function* () {
+          const rootDir = path.resolve(cwd || process.cwd());
+          const resolved = path.resolve(rootDir, rawPath);
+          if (!resolved.startsWith(rootDir)) {
+            return yield* Effect.fail(new Error(`Path traversal attempt detected: ${rawPath}`));
+          }
+          return resolved;
+        });
+
+      const processFile = (filePath: string) =>
+        Effect.gen(function* () {
+          const { parser } = yield* TreeSitterParser;
+          const safePath = yield* getSafeFilePath(filePath, body.cwd);
+
+          const exists = yield* Effect.tryPromise({
+            try: () => fs.promises.stat(safePath).then(() => true).catch(() => false),
+            catch: (e) => new Error(`Stat failed: ${String(e)}`),
+          });
+
+          if (!exists) {
+            return { filePath, content: "", error: "File not found" };
+          }
+
+          const fileContent = yield* Effect.tryPromise({
+            try: () => fs.promises.readFile(safePath, "utf-8"),
+            catch: (e) => new Error(`Failed to read file ${filePath}: ${String(e)}`),
+          });
+
+          const skeleton = yield* extractSkeleton(fileContent, parser, body.anchors);
+          return { filePath, content: skeleton };
+        });
+
+      return yield* Effect.all(
+        body.paths.map((p) => processFile(p)),
+        { concurrency: "unbounded" }
+      );
+    }).pipe(Effect.provide(TreeSitterParserLive));
+
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: res.left.message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      tx: t.Object({
+        id: t.String(),
+        baseBranch: t.String(),
+        ephemeralBranch: t.String(),
+        checkpoints: t.Array(t.String())
+      }),
+      paths: t.Array(t.String()),
+      anchors: t.Array(t.Object({
+        entityType: t.Union([t.Literal("class"), t.Literal("function"), t.Literal("method")]),
+        entityName: t.String()
+      })),
+      cwd: t.Optional(t.String())
+    })
+  })
   .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.initTransaction(body.taskId);
