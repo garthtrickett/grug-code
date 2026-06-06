@@ -12,6 +12,11 @@ import { TokenEstimatorLive } from "../../lib/server/TokenEstimator.ts";
 import { effectPlugin } from "../middleware/effect-plugin.ts";
 import { PatchApplicationError } from "../../lib/server/AiderPatcher.ts";
 
+// Step 3 Integration Services
+import { ResearchLoop, ResearchLoopLive } from "../../features/agent/ResearchLoop.ts";
+import { ProjectStructureMapper, ProjectStructureMapperLive } from "../../features/agent/ProjectStructureMapper.ts";
+import { AiServiceLive } from "../../lib/server/AiService.ts";
+
 const runner = makeCommandRunner();
 
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
@@ -319,6 +324,43 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         ephemeralBranch: t.String(),
         checkpoints: t.Array(t.String())
       }),
+      cwd: t.Optional(t.String())
+    })
+  })
+  .post("/research", async ({ body, runEffect, set }) => {
+    const effect = Effect.gen(function* () {
+      const mapper = yield* ProjectStructureMapper;
+      const loop = yield* ResearchLoop;
+
+      // 1. Scan and index relative codebase path layout
+      const projectStructure = yield* mapper.mapProject({ cwd: body.cwd });
+
+      // 2. Dispatch prompts and execute multi-turn exploration sequence
+      const result = yield* loop.run({
+        userPrompt: body.userPrompt,
+        projectStructure,
+        cwd: body.cwd,
+      });
+
+      return result;
+    }).pipe(
+      Effect.provide(ResearchLoopLive),
+      Effect.provide(ProjectStructureMapperLive),
+      Effect.provide(AiServiceLive),
+      Effect.provide(TreeSitterParserLive),
+      Effect.provide(SurgicalRouterLive),
+      Effect.provide(TokenEstimatorLive)
+    );
+
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: (res.left).message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      userPrompt: t.String(),
       cwd: t.Optional(t.String())
     })
   });
