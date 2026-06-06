@@ -37,7 +37,6 @@ export const AiServiceLive = Layer.sync(
   () => {
     const apiKey = config.gemini.apiKey;
     const google = createGoogleGenerativeAI({ apiKey });
-    console.log("APIKEY: ", apiKey)
     const defaultModel = "gemini-flash-latest";
 
     return {
