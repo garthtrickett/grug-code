@@ -29,7 +29,10 @@ export const config = {
     isProduction: process.env.NODE_ENV === "production",
     rootDomain: process.env.ROOT_DOMAIN || "life-io.xyz",
   },
-  jwt: {
+    jwt: {
     secret: getEnvOrDefault("JWT_SECRET", "Few4D1oru8s1GEZJY2mmg1hjdC2nszByiLuUba1bcbA="),
+  },
+  gemini: {
+    apiKey: getEnvOrDefault("GEMINI_API_KEY", ""),
   },
 };
