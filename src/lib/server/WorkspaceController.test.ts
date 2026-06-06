@@ -145,8 +145,50 @@ Grug applied patch success.
     expect(result).toContain("src");
     expect(result).toContain("src/components");
     expect(result).not.toContain("node_modules");
-    expect(result).not.toContain("node_modules/lodash");
+        expect(result).not.toContain("node_modules/lodash");
     expect(result).not.toContain("dist");
     expect(result).not.toContain(".git");
+  });
+
+  it("should manage `.grug-active-transaction.json` metadata lifecycle and state reconciliation correctly", async () => {
+    const controller = makeWorkspaceController(tempDir);
+    const stateFile = path.join(tempDir, ".grug-active-transaction.json");
+
+    expect(fs.stat(stateFile).then(() => true).catch(() => false)).resolves.toBe(false);
+
+    const dummyTasks = [
+      { id: "task-1", description: "Write metadata logic", targetFiles: ["src/a.ts"], status: "pending" as const }
+    ];
+    const tx = await Effect.runPromise(controller.initTransaction("task-metadata-lifecycle", "openai", dummyTasks));
+
+    const text1 = await fs.readFile(stateFile, "utf-8");
+    const parsed1 = JSON.parse(text1);
+    expect(parsed1.tx.id).toBe("task-metadata-lifecycle");
+    expect(parsed1.tx.provider).toBe("openai");
+    expect(parsed1.tasks.length).toBe(1);
+    expect(parsed1.tasks[0].id).toBe("task-1");
+
+    const readState1 = await Effect.runPromise(controller.readTransactionState());
+    expect(readState1).not.toBeNull();
+    expect(readState1?.tx.id).toBe("task-metadata-lifecycle");
+    expect(readState1?.tasks[0]?.description).toBe("Write metadata logic");
+
+    const updatedTasks = [
+      { id: "task-1", description: "Write metadata logic", targetFiles: ["src/a.ts"], status: "completed" as const }
+    ];
+    await fs.writeFile(path.join(tempDir, "initial.txt"), "Modified.\n");
+    const tx2 = await Effect.runPromise(controller.createCheckpoint(tx, "first-checkpoint", updatedTasks));
+
+    const text2 = await fs.readFile(stateFile, "utf-8");
+    const parsed2 = JSON.parse(text2);
+    expect(parsed2.tx.checkpoints.length).toBe(1);
+    expect(parsed2.tasks[0].status).toBe("completed");
+
+    const tx3 = await Effect.runPromise(controller.rollbackToCheckpoint(tx2, tx2.checkpoints[0]!, updatedTasks));
+    expect(tx3.checkpoints.length).toBe(1);
+
+    await Effect.runPromise(controller.abortTransaction(tx3));
+    const existsAfterAbort = await fs.stat(stateFile).then(() => true).catch(() => false);
+    expect(existsAfterAbort).toBe(false);
   });
 });

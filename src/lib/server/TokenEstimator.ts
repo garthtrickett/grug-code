@@ -5,12 +5,22 @@ export interface ITokenEstimator {
   readonly estimateStringTokens: (content: string) => Effect.Effect<number, never>;
   readonly estimateTokens: (filePath: string) => Effect.Effect<number, Error>;
   readonly estimateTotalTokens: (filePaths: readonly string[]) => Effect.Effect<number, Error>;
+  readonly logTokenUsage: (taskId: string, phase: string, count: number) => Effect.Effect<void, never>;
 }
 
 export class TokenEstimator extends Context.Tag("TokenEstimator")<
   TokenEstimator,
   ITokenEstimator
->() {}
+>() {
+  public static readonly tokenUsageMap = new Map<string, Record<string, number>>();
+
+  public static logTokenUsage(taskId: string, phase: string, count: number): void {
+    const existing = this.tokenUsageMap.get(taskId) || {};
+    existing[phase] = (existing[phase] || 0) + count;
+    this.tokenUsageMap.set(taskId, existing);
+    console.info("[TokenEstimator] Logged token usage: taskId=" + taskId + ", phase=" + phase + ", count=" + count);
+  }
+}
 
 /**
  * A highly efficient and deterministic token estimator that closely approximates
@@ -73,7 +83,7 @@ export const TokenEstimatorLive = Layer.succeed(
         return countTokens(text);
       }),
 
-    estimateTotalTokens: (filePaths: readonly string[]) =>
+        estimateTotalTokens: (filePaths: readonly string[]) =>
       Effect.gen(function* () {
         let total = 0;
         for (const filePath of filePaths) {
@@ -84,6 +94,11 @@ export const TokenEstimatorLive = Layer.succeed(
           total += countTokens(content);
         }
         return total;
+      }),
+
+    logTokenUsage: (taskId: string, phase: string, count: number) =>
+      Effect.sync(() => {
+        TokenEstimator.logTokenUsage(taskId, phase, count);
       }),
   })
 );

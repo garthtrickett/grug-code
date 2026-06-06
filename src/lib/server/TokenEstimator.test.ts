@@ -53,10 +53,21 @@ describe("TokenEstimator - Local BPE Heuristics", () => {
       expect(count1).toBeGreaterThan(0);
       expect(count2).toBeGreaterThan(0);
 
-      const total = yield* estimator.estimateTotalTokens([file1, file2]);
+            const total = yield* estimator.estimateTotalTokens([file1, file2]);
       expect(total).toBe(count1 + count2);
     }).pipe(Effect.provide(TokenEstimatorLive));
 
     await Effect.runPromise(program);
+  });
+
+  it("should record per-task per-phase token counts using static logTokenUsage", () => {
+    TokenEstimator.logTokenUsage("test-task-1", "discussion", 500);
+    TokenEstimator.logTokenUsage("test-task-1", "discussion", 300);
+    TokenEstimator.logTokenUsage("test-task-1", "exploration", 1000);
+
+    const record = TokenEstimator.tokenUsageMap.get("test-task-1");
+    expect(record).toBeDefined();
+    expect(record?.["discussion"]).toBe(800);
+    expect(record?.["exploration"]).toBe(1000);
   });
 });
