@@ -64,7 +64,7 @@ export const AiServiceLive = Layer.sync(
         readonly schema: z.Schema<T>;
       }) =>
         Effect.gen(function* () {
-                    // Cross-process testing override for offline headless E2E testing
+          // Cross-process testing override for offline headless E2E testing
           if (process.env.VITEST !== "true" && (fs.existsSync(".grug-mock-ai") || process.env.MOCK_AI_RESPONSE === "true")) {
             yield* Effect.logInfo(`[AiService] Intercepting prompt with mock testing response: "${prompt.substring(0, 40)}..."`);
             if (prompt.includes("LIGHTWEIGHT FLAT REPOSITORY MAP")) {
@@ -98,7 +98,7 @@ export const AiServiceLive = Layer.sync(
                 ]
               } as unknown as T;
             }
-            if (prompt.includes("test failures")) {
+            if (prompt.includes("test failures") || prompt.includes("tests failed")) {
               return {
                 summary: "Fix test error",
                 files: [
@@ -112,10 +112,10 @@ export const AiServiceLive = Layer.sync(
             return { files: [] } as unknown as T;
           }
 
-                    const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : provider === "deepseek" ? defaultDeepseekModel : defaultGeminiModel);
+          const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : provider === "deepseek" ? defaultDeepseekModel : defaultGeminiModel);
           const modelInstance = provider === "openai" ? openai(resolvedModel) : provider === "deepseek" ? deepseek(resolvedModel) : google(resolvedModel);
 
-                    const result = yield* Effect.tryPromise({
+          const result = yield* Effect.tryPromise({
             try: () =>
               generateObject({
                 model: modelInstance,
@@ -133,7 +133,7 @@ export const AiServiceLive = Layer.sync(
           return result.object;
         }),
 
-            streamText: ({
+      streamText: ({
         provider = "gemini",
         modelName,
         system,
