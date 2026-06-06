@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"bun run dev:client\" \"bun run dev:server\"",
     "dev:client": "vite",
-    "dev:server": "./scripts/wait-for-postgres.sh && bun run --watch src/server/index.ts",
+    "dev:server": "./scripts/wait-for-postgres.sh && bun --hot run src/server/index.ts",
     "build": "vite build",
     "start": "bun run src/server/index.ts",
     "lint": "eslint . --ext .ts,.js --cache --fix",
