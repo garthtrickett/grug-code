@@ -35,6 +35,8 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
         compilerOptions: {
           strict: true,
           target: "es2022",
+          moduleResolution: "node",
+          skipLibCheck: true,
           noEmit: true
         },
         include: ["main.ts"]

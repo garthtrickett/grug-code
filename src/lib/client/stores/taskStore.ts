@@ -22,6 +22,7 @@ export const tasksSignal = signal<readonly PlanTask[]>([]);
 export const isPausedSignal = signal<boolean>(false);
 export const activeTxSignal = signal<GitTransaction | null>(null);
 export const errorSignal = signal<string | null>(null);
+export const stepProgressSignal = signal<string>("");
 
 export const grugTokenState = signal<string>("");
 
@@ -73,6 +74,7 @@ export const taskStore = {
       isPausedSignal.value = false;
       activeTxSignal.value = null;
       errorSignal.value = null;
+      stepProgressSignal.value = "";
     }),
 
   initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string) =>
@@ -138,6 +140,83 @@ export const taskStore = {
 
       yield* clientLog("info", `[taskStore] Task queue initialized. Ephemeral branch: ${tx.ephemeralBranch}`);
       return tx;
+    }),
+
+  executeStep: (task: PlanTask, cwd?: string) =>
+    Effect.gen(function* () {
+      errorSignal.value = null;
+      stepProgressSignal.value = "Applying initial instructions...";
+      
+      const tx = activeTxSignal.value;
+      if (!tx) return;
+
+      tasksSignal.value = tasksSignal.value.map((t) =>
+        t.id === task.id ? { ...t, status: "running" } : t
+      );
+
+      yield* clientLog("info", `[taskStore] Executing step: ${task.description}`);
+
+      // Active loopback background progress polling
+      let polling = true;
+      const pollProgress = async () => {
+        while (polling) {
+          try {
+            const res = await fetch("/api/workspace/progress", { headers: getHeaders() });
+            if (res.ok) {
+              const data = await res.json() as { progress: string };
+              if (data.progress) {
+                stepProgressSignal.value = data.progress;
+              }
+            }
+          } catch {
+            // Ignore temporary polling network drops
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      };
+      void pollProgress();
+
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch("/api/workspace/execute-step", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({
+              tx,
+              targetFiles: task.targetFiles,
+              instructions: task.developerNotes || task.description,
+              cwd,
+            }),
+          }),
+        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
+      });
+
+      polling = false; // Gracefully shut down active polling loop
+      stepProgressSignal.value = "";
+
+      if (!response.ok) {
+        const errObj = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<{ error: string }>,
+          catch: () => ({ error: `HTTP error ${response.status}` }),
+        });
+        errorSignal.value = errObj.error;
+        tasksSignal.value = tasksSignal.value.map((t) =>
+          t.id === task.id ? { ...t, status: "failed" } : t
+        );
+        return yield* Effect.fail(new Error(errObj.error));
+      }
+
+      const updatedTx = yield* Effect.tryPromise({
+        try: () => response.json() as Promise<GitTransaction>,
+        catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
+      });
+
+      activeTxSignal.value = updatedTx;
+      tasksSignal.value = tasksSignal.value.map((t) =>
+        t.id === task.id ? { ...t, status: "completed" } : t
+      );
+
+      yield* clientLog("info", `[taskStore] Step successfully executed: ${task.description}`);
     }),
 
   pauseQueue: () =>

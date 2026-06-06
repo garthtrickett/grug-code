@@ -4,6 +4,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { config } from "./Config.ts";
 import { z } from "zod";
 import { Data } from "effect";
+import * as fs from "node:fs";
 
 export class AIInferenceError extends Data.TaggedError("AIInferenceError")<{
   readonly message: string;
@@ -18,7 +19,6 @@ export interface IAiService {
     readonly schema: z.Schema<T>;
   }) => Effect.Effect<T, AIInferenceError>;
 
-     
   readonly streamText: (options: {
     readonly modelName?: string;
     readonly system?: string;
@@ -52,6 +52,34 @@ export const AiServiceLive = Layer.sync(
         readonly schema: z.Schema<T>;
       }) =>
         Effect.gen(function* () {
+          // Cross-process testing override for offline headless E2E testing
+          if (fs.existsSync(".grug-mock-ai") || process.env.MOCK_AI_RESPONSE === "true") {
+            yield* Effect.logInfo(`[AiService] Intercepting prompt with mock testing response: "${prompt.substring(0, 40)}..."`);
+            if (prompt.includes("compilation failed")) {
+              return {
+                summary: "Fix compile error",
+                files: [
+                  {
+                    file_path: "main.ts",
+                    code_diff: "<<<<<<< SEARCH\nexport const x: number = 'broken';\n=======\nexport const x: number = 10;\n>>>>>>> REPLACE"
+                  }
+                ]
+              } as unknown as T;
+            }
+            if (prompt.includes("test failures")) {
+              return {
+                summary: "Fix test error",
+                files: [
+                  {
+                    file_path: "main.ts",
+                    code_diff: "<<<<<<< SEARCH\nexport const x: number = 10;\n=======\nexport const x: number = 42;\n>>>>>>> REPLACE"
+                  }
+                ]
+              } as unknown as T;
+            }
+            return { files: [] } as unknown as T;
+          }
+
           const result = yield* Effect.tryPromise({
             try: () =>
               generateObject({

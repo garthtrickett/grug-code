@@ -16,6 +16,7 @@ import { PatchApplicationError } from "../../lib/server/AiderPatcher.ts";
 import { ResearchLoop, ResearchLoopLive } from "../../features/agent/ResearchLoop.ts";
 import { ProjectStructureMapper, ProjectStructureMapperLive } from "../../features/agent/ProjectStructureMapper.ts";
 import { AiServiceLive } from "../../lib/server/AiService.ts";
+import { CorrectionLoop, CorrectionLoopLive } from "../../features/agent/CorrectionLoop.ts";
 
 const runner = makeCommandRunner();
 
@@ -324,6 +325,39 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         ephemeralBranch: t.String(),
         checkpoints: t.Array(t.String())
       }),
+      cwd: t.Optional(t.String())
+    })
+  })
+  .post("/execute-step", async ({ body, runEffect, set }) => {
+    const effect = Effect.flatMap(CorrectionLoop, (loop) =>
+      loop.runStep({
+        tx: body.tx,
+        targetFiles: body.targetFiles,
+        instructions: body.instructions,
+        cwd: body.cwd,
+      })
+    ).pipe(
+      Effect.provide(CorrectionLoopLive),
+      Effect.provide(AiServiceLive),
+      Effect.provide(TreeSitterParserLive)
+    );
+
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: res.left.message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      tx: t.Object({
+        id: t.String(),
+        baseBranch: t.String(),
+        ephemeralBranch: t.String(),
+        checkpoints: t.Array(t.String())
+      }),
+      targetFiles: t.Array(t.String()),
+      instructions: t.String(),
       cwd: t.Optional(t.String())
     })
   })

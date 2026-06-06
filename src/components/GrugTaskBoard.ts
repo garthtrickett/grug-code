@@ -12,6 +12,8 @@ import {
   isPausedSignal,
   activeTxSignal,
   errorSignal,
+  stepProgressSignal,
+  type PlanTask,
 } from "../lib/client/stores/taskStore";
 import {
   directoriesSignal,
@@ -41,6 +43,7 @@ export class GrugTaskBoard extends LitElement {
       void isPausedSignal.value;
       void activeTxSignal.value;
       void errorSignal.value;
+      void stepProgressSignal.value;
       void directoriesSignal.value;
       void selectedScopeSignal.value;
       this.requestUpdate();
@@ -93,6 +96,19 @@ export class GrugTaskBoard extends LitElement {
     }
   };
 
+  private handleExecuteStep = (task: PlanTask) => {
+    const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
+    runClientUnscoped(
+      Effect.gen(function* () {
+        yield* taskStore.executeStep(task, cwd);
+      }).pipe(
+        Effect.catchAll((err) =>
+          clientLog("error", `[GrugTaskBoard] Step execution failed: ${this.getErrorMessage(err)}`)
+        )
+      )
+    );
+  };
+
   private handleRollback = (commitHash: string) => {
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
     runClientUnscoped(
@@ -137,7 +153,7 @@ export class GrugTaskBoard extends LitElement {
     void runClientUnscoped(clientLog("info", `[GrugTaskBoard] Removed step ${taskId} from pending queue`));
   };
 
-    private getSelectApi() {
+  private getSelectApi() {
     const items = directoriesSignal.value;
     const itemsWithRoot = ["", ...items];
 
@@ -169,7 +185,7 @@ export class GrugTaskBoard extends LitElement {
         itemToString: (item) => item || "Whole Project Root",
         itemToValue: (item) => item,
       });
-            if (this._selectService && this._selectService.updateProps) {
+      if (this._selectService && this._selectService.updateProps) {
         this._selectService.updateProps({ collection });
       }
     }
@@ -364,11 +380,14 @@ export class GrugTaskBoard extends LitElement {
                               <div>
                                 <h4 class="text-sm font-medium text-white ${isCompleted ? "line-through text-zinc-500" : ""}">${task.description}</h4>
                                 <p class="text-xs text-zinc-400 mt-0.5 font-mono">Target Files: ${task.targetFiles.join(", ") || "None"}</p>
+                                ${task.status === "running" && stepProgressSignal.value
+                                  ? html`<p class="text-xs text-green-400 mt-1 font-semibold animate-pulse">⏳ ${stepProgressSignal.value}</p>`
+                                  : ""}
                               </div>
                               <input 
                                 type="text" 
                                 .value=${task.developerNotes || ""}
-                                ?disabled=${isCompleted}
+                                ?disabled=${isCompleted || task.status === "running"}
                                 placeholder="Add developer checklist notes or instructions..."
                                 @change=${(e: Event) => this.handleEditNotes(task.id, e)}
                                 class="w-full px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 focus:outline-none focus:border-zinc-700 text-xs"
@@ -377,12 +396,20 @@ export class GrugTaskBoard extends LitElement {
                           </div>
                           ${task.status === "pending"
                             ? html`
-                                <button 
-                                  @click=${() => this.handleRemoveTask(task.id)}
-                                  class="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded transition-all cursor-pointer text-xs"
-                                >
-                                  Remove
-                                </button>
+                                <div class="flex items-center gap-2">
+                                  <button
+                                    @click=${() => this.handleExecuteStep(task)}
+                                    class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded text-xs font-bold transition-all cursor-pointer"
+                                  >
+                                    Run Step
+                                  </button>
+                                  <button 
+                                    @click=${() => this.handleRemoveTask(task.id)}
+                                    class="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 p-1.5 rounded transition-all cursor-pointer text-xs"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
                               `
                             : ""}
                         </div>

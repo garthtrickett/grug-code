@@ -64,3 +64,8 @@ export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{
   readonly userId: string;
   readonly tenantId: string;
 }> {}
+
+export class SelfCorrectionError extends Data.TaggedError("SelfCorrectionError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}

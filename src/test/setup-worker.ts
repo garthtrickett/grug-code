@@ -1,4 +1,3 @@
- 
 import "fake-indexeddb/auto";
 import { beforeAll, afterAll } from "vitest";
 import { setupWorkerDb, teardownWorkerDb } from "./worker-db-setup";
@@ -6,6 +5,27 @@ import { closeCentralDb } from "../db/client";
 import * as fs from "node:fs/promises";
 
 // Safe cross-runtime Bun polyfill for Vitest running under Node
+class MockGlob {
+  constructor(_pattern: string) {}
+  scanSync(_options?: unknown): string[] {
+    return [];
+  }
+  scan(_options?: unknown): AsyncIterable<string> {
+    return {
+      [Symbol.asyncIterator]() {
+        return {
+          next(): Promise<IteratorResult<string>> {
+            return Promise.resolve({ done: true, value: undefined as unknown as string });
+          }
+        };
+      }
+    };
+  }
+  match(_path: string): boolean {
+    return false;
+  }
+}
+
 const mockBun = {
   file: (path: string | URL) => ({
     text: () => fs.readFile(typeof path === "string" ? path : path.toString(), "utf-8"),
@@ -17,6 +37,7 @@ const mockBun = {
   },
   env: process.env,
   gc: () => {},
+  Glob: MockGlob,
 };
 
 if (typeof (globalThis as unknown as Record<string, unknown>)["Bun"] === "undefined") {
