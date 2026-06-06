@@ -3,21 +3,15 @@
 
 import type { default as UserTable } from './User';
 import type { default as SyncEpochTable } from './SyncEpoch';
-import type { default as DeckTable } from './Deck';
 import type { default as UserPreferenceTable } from './UserPreference';
 import type { default as PlatformAdminTable } from './PlatformAdmin';
-import type { default as SrsCardTable } from './SrsCard';
 
 export default interface PublicSchema {
   user: UserTable;
 
   sync_epoch: SyncEpochTable;
 
-  deck: DeckTable;
-
   user_preference: UserPreferenceTable;
 
   platform_admin: PlatformAdminTable;
-
-  srs_card: SrsCardTable;
 }
