@@ -11,6 +11,10 @@ import {
   setGrugToken,
   initializeGrugToken,
   grugTokenState,
+  isResearchingSignal,
+  isPlanningSignal,
+  proposedFilesSignal,
+  proposedTasksSignal,
 } from "./taskStore";
 import { hlcStore, hlcSignal } from "./hlcStore";
 
@@ -27,11 +31,15 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     global.fetch = originalFetch;
   });
 
-  it("should initialize default state correctly on clear", () => {
+    it("should initialize default state correctly on clear", () => {
     expect(tasksSignal.value.length).toBe(0);
     expect(isPausedSignal.value).toBe(false);
     expect(activeTxSignal.value).toBeNull();
     expect(errorSignal.value).toBeNull();
+    expect(isResearchingSignal.value).toBe(false);
+    expect(isPlanningSignal.value).toBe(false);
+    expect(proposedFilesSignal.value.length).toBe(0);
+    expect(proposedTasksSignal.value.length).toBe(0);
   });
 
   it("should securely extract token from meta tag and scrub it from document", () => {
@@ -146,6 +154,75 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(options).toBeDefined();
     const parsedBody = JSON.parse(options.body);
     expect(parsedBody.provider).toBe("openai");
+  });
+
+    it("should successfully trigger researchFeature and update planning signals", async () => {
+    const mockResearchData = {
+      target_files: ["src/services/payment.ts"],
+      plan: [
+        {
+          id: "step-1",
+          description: "Modify payment signature",
+          targetFiles: ["src/services/payment.ts"],
+          status: "pending" as const,
+        },
+      ],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockResearchData,
+    }) as any;
+
+    const action = taskStore.researchFeature("Adjust processing", "/mock/cwd", "src", "openai");
+    const result = await runClientPromise(action);
+
+    expect(result).toEqual(mockResearchData);
+    expect(isResearchingSignal.value).toBe(false);
+    expect(isPlanningSignal.value).toBe(true);
+    expect(proposedFilesSignal.value).toEqual(["src/services/payment.ts"]);
+    expect(proposedTasksSignal.value).toEqual(mockResearchData.plan);
+  });
+
+  it("should initialize task queue with custom planned steps when provided", async () => {
+    const mockTx = {
+      id: "task-002",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/task-002",
+      checkpoints: [],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockTx,
+    }) as any;
+
+    const customSteps = [
+      {
+        id: "step-custom-1",
+        description: "Custom step description",
+        targetFiles: ["src/custom.ts"],
+        status: "pending" as const,
+      }
+    ];
+
+    const action = taskStore.initTaskQueue(
+      "task-002",
+      "Create widget",
+      ["src/custom.ts"],
+      "/mock/cwd",
+      undefined,
+      "openai",
+      customSteps
+    );
+    await runClientPromise(action);
+
+    expect(activeTxSignal.value).toEqual(mockTx);
+    expect(tasksSignal.value).toEqual(customSteps);
+    expect(isPlanningSignal.value).toBe(false);
+    expect(proposedFilesSignal.value.length).toBe(0);
   });
 
   it("should handle error messages returned from failed workspace initializations", async () => {

@@ -54,6 +54,11 @@ export const stepProgressSignal = signal<string>("");
 
 export const grugTokenState = signal<string>("");
 
+export const isResearchingSignal = signal<boolean>(false);
+export const isPlanningSignal = signal<boolean>(false);
+export const proposedFilesSignal = signal<readonly string[]>([]);
+export const proposedTasksSignal = signal<readonly PlanTask[]>([]);
+
 export const initializeGrugToken = () => {
   if (typeof document !== "undefined") {
     const meta = document.querySelector('meta[name="grug-session-token"]');
@@ -96,13 +101,17 @@ const getHeaders = () => {
 };
 
 export const taskStore = {
-  clear: () =>
+    clear: () =>
     Effect.gen(function* () {
       tasksSignal.value = [];
       isPausedSignal.value = false;
       activeTxSignal.value = null;
       errorSignal.value = null;
       stepProgressSignal.value = "";
+      isResearchingSignal.value = false;
+      isPlanningSignal.value = false;
+      proposedFilesSignal.value = [];
+      proposedTasksSignal.value = [];
       if (typeof localStorage !== "undefined") {
         localStorage.removeItem("grug-active-tx");
         localStorage.removeItem("grug-active-tasks");
@@ -110,8 +119,62 @@ export const taskStore = {
       }
     }),
 
-    initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string, provider?: "gemini" | "openai" | "deepseek") =>
+  researchFeature: (description: string, cwd?: string, selectedScope?: string, provider?: "gemini" | "openai" | "deepseek") =>
     Effect.gen(function* () {
+      errorSignal.value = null;
+      isResearchingSignal.value = true;
+      isPlanningSignal.value = false;
+      proposedFilesSignal.value = [];
+      proposedTasksSignal.value = [];
+      
+      yield* clientLog("info", `[taskStore] Researching codebase for feature: ${description}`);
+
+      const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
+
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch("/api/workspace/research", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ userPrompt: description, cwd: requestCwd, provider }),
+          }),
+        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
+      });
+
+      isResearchingSignal.value = false;
+
+      if (!response.ok) {
+        const errObj = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<{ error: string }>,
+          catch: () => ({ error: `HTTP error ${response.status}` }),
+        });
+        errorSignal.value = errObj.error;
+        return yield* Effect.fail(new Error(errObj.error));
+      }
+
+      const researchResult = yield* Effect.tryPromise({ 
+        try: () => response.json() as Promise<{ target_files: readonly string[]; plan: readonly PlanTask[] }>,
+        catch: (e) => new Error(`Failed to parse research data: ${String(e)}`),
+      });
+
+      proposedFilesSignal.value = researchResult.target_files;
+      proposedTasksSignal.value = researchResult.plan;
+      isPlanningSignal.value = true;
+
+      yield* clientLog("info", `[taskStore] Research completed. Found ${researchResult.target_files.length} proposed files.`);
+      return researchResult;
+    }),
+
+  initTaskQueue: (
+    taskId: string,
+    description: string,
+    targetFiles: readonly string[],
+    cwd?: string,
+    selectedScope?: string,
+    provider?: "gemini" | "openai" | "deepseek",
+    customTasks?: readonly PlanTask[]
+  ) =>
+    Effect.gen(function* () { 
       errorSignal.value = null;
       yield* clientLog("info", `[taskStore] Initializing task queue for transaction: ${taskId}`);
 
@@ -141,31 +204,38 @@ export const taskStore = {
         catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
       });
 
-      // Populate initial tasks checklist based on targeted files
-      const initialTasks: PlanTask[] = [
-        {
-          id: `step-analysis-${crypto.randomUUID().slice(0, 8)}`,
-          description: `Analyze codebase target files: ${targetFiles.join(", ")}`,
-          targetFiles,
-          status: "completed",
-        },
-        {
-          id: `step-patch-${crypto.randomUUID().slice(0, 8)}`,
-          description: `Apply surgical patch changes for feature "${description}"`,
-          targetFiles,
-          status: "pending",
-        },
-        {
-          id: `step-verification-${crypto.randomUUID().slice(0, 8)}`,
-          description: "Verify codebase type-checking and run active unit/E2E test suite",
-          targetFiles: [],
-          status: "pending",
-        }
-      ];
+      let initialTasks: readonly PlanTask[];
+      if (customTasks && customTasks.length > 0) {
+        initialTasks = customTasks;
+      } else {
+        initialTasks = [
+          {
+            id: `step-analysis-${crypto.randomUUID().slice(0, 8)}`,
+            description: `Analyze codebase target files: ${targetFiles.join(", ")}`,
+            targetFiles,
+            status: "completed",
+          },
+          {
+            id: `step-patch-${crypto.randomUUID().slice(0, 8)}`,
+            description: `Apply surgical patch changes for feature "${description}"`,
+            targetFiles,
+            status: "pending",
+          },
+          {
+            id: `step-verification-${crypto.randomUUID().slice(0, 8)}`,
+            description: "Verify codebase type-checking and run active unit/E2E test suite",
+            targetFiles: [],
+            status: "pending",
+          }
+        ];
+      }
 
       tasksSignal.value = initialTasks;
       activeTxSignal.value = tx;
       isPausedSignal.value = false;
+      isPlanningSignal.value = false;
+      proposedFilesSignal.value = [];
+      proposedTasksSignal.value = [];
 
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("grug-active-tx", JSON.stringify(tx));
