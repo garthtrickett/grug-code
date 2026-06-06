@@ -18,11 +18,12 @@ export interface IAiService {
     readonly schema: z.Schema<T>;
   }) => Effect.Effect<T, AIInferenceError>;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
   readonly streamText: (options: {
     readonly modelName?: string;
     readonly system?: string;
     readonly prompt: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }) => Effect.Effect<StreamTextResult<any, any>, AIInferenceError>;
 }
 
