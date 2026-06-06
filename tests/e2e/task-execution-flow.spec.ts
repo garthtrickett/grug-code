@@ -10,11 +10,18 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
   let tempDir: string;
   let sessionToken: string;
 
-  test.beforeAll(async () => {
+    test.beforeAll(async () => {
     // Read local loopback session token securely
     const fileContent = await fs.readFile(".grug-session.json", "utf-8");
     const sessionData = JSON.parse(fileContent) as { token: string };
     sessionToken = sessionData.token;
+
+    // Enable cross-process mock AI signaling
+    await fs.writeFile(".grug-mock-ai", "true");
+  });
+
+  test.afterAll(async () => {
+    await fs.unlink(".grug-mock-ai").catch(() => {});
   });
 
   test.beforeEach(async () => {
@@ -52,20 +59,24 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
     const heading = page.locator("grug-task-board h2");
     await expect(heading).toContainText("Launch Development Session");
 
-    // 4. Fill form inputs to start a mock transaction
-    await page.fill("input[name='taskId']", "e2e-ui-task-flow");
-    await page.fill("input[name='targetFiles']", "initial.txt");
-    await page.fill("input[name='description']", "E2E custom feature update");
+            // 4. Fill form inputs to start planning
+        await page.fill("input[name='description']", "E2E custom feature update");
+        await page.click("button[type='submit']");
 
-    await page.click("button[type='submit']");
+        // 5. Assert proposal page transition
+        const proposalHeader = page.locator("grug-task-board h2");
+        await expect(proposalHeader).toContainText("Proposed Development Plan");
 
-    // 5. Assert transition to transaction view
-    const txHeader = page.locator("grug-task-board h2");
-    await expect(txHeader).toContainText("Workspace Transaction: e2e-ui-task-flow");
+        // 6. Click start transaction
+        await page.click("button:has-text('Approve & Start Task Transaction')");
 
-    // 6. Assert step descriptions are visible
-    const firstStep = page.locator("grug-task-board h4").first();
-    await expect(firstStep).toContainText("Analyze codebase target files");
+        // 7. Assert transition to transaction view
+        const txHeader = page.locator("grug-task-board h2");
+        await expect(txHeader).toContainText("Workspace Transaction:");
+
+        // 8. Assert step descriptions are visible
+        const firstStep = page.locator("grug-task-board h4").first();
+        await expect(firstStep).toContainText("Analyze codebase targets");
 
     // 7. Verify play/pause signal transitions cleanly
     const pauseBtn = page.locator("grug-task-board button:has-text('Pause Queue')");
@@ -82,8 +93,8 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
     // 9. Verify workspace successfully resets back to task initialization view
     await expect(heading).toContainText("Launch Development Session");
 
-    // Ensure ephemeral branch was safely deleted on disk
-    const branchList = await execPromise("git branch", { cwd: tempDir });
-    expect(branchList.stdout.includes("grug-task/e2e-ui-task-flow")).toBe(false);
+            // Ensure ephemeral branch was safely deleted on disk
+        const branchList = await execPromise("git branch", { cwd: tempDir });
+        expect(branchList.stdout.includes("grug-task/")).toBe(false);
   });
 });
