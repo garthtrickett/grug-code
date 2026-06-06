@@ -12,6 +12,29 @@ import { authRoutes } from "./routes/auth.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
 import { getActiveToken } from "./middleware/security.ts";
 
+import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr } from "../lib/server/mcp/McpServer.ts";
+import { Effect } from "effect";
+
+const isMcpMode = (typeof Bun !== "undefined" && Bun.argv.includes("--mcp")) || process.argv.includes("--mcp");
+
+if (isMcpMode) {
+  redirectConsoleLogToStderr();
+  const program = Effect.gen(function* () {
+    const mcp = yield* McpService;
+    yield* mcp.start();
+  }).pipe(
+    Effect.provide(McpServiceLive),
+    Effect.provide(McpLoggerLive)
+  );
+
+  void import("../lib/server/server-runtime.ts").then(({ serverRuntime }) => {
+    void serverRuntime.runPromise(program).catch((err) => {
+      console.error("[McpServer] Catastrophic startup failure:", err);
+      process.exit(1);
+    });
+  });
+}
+
 export const app = new Elysia()
   .onError(({ code, error, request }) => {
     console.error(`[Global Error] ${request.method} ${request.url} - ${code}`, error);
@@ -77,7 +100,7 @@ export const app = new Elysia()
     return "Development Server: Build output is not present in `./dist`. Use the Vite dev server on port 3000.";
   });
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !isMcpMode) {
   const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
   app.listen(port);
   console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
