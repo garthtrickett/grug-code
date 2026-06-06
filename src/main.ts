@@ -9,11 +9,13 @@ import "./components/layouts/app-shell.ts";
 // Register global error listeners to forward unhandled client exceptions to the server log
 if (typeof window !== "undefined") {
   window.addEventListener("error", (event) => {
+    const err = event.error as unknown;
+    const stack = err instanceof Error ? err.stack : undefined;
     const payload = {
       level: "error",
       timestamp: new Date().toISOString(),
       message: `[Unhandled Window Error] ${event.message} at ${event.filename}:${event.lineno}:${event.colno}`,
-      data: event.error ? { stack: String(event.error.stack) } : {},
+      data: stack ? { stack: String(stack) } : {},
       url: window.location.href,
     };
     fetch("/api/log", {
@@ -24,11 +26,13 @@ if (typeof window !== "undefined") {
   });
 
   window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason as unknown;
+    const stack = reason instanceof Error ? reason.stack : undefined;
     const payload = {
       level: "error",
       timestamp: new Date().toISOString(),
       message: `[Unhandled Promise Rejection] ${String(event.reason)}`,
-      data: event.reason && typeof event.reason === "object" && "stack" in event.reason ? { stack: String(event.reason.stack) } : {},
+      data: stack ? { stack: String(stack) } : {},
       url: window.location.href,
     };
     fetch("/api/log", {

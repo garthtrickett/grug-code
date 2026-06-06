@@ -25,7 +25,10 @@ export const clientLog = (
     }
 
     const forwardEffect = Effect.gen(function* () {
-      if (import.meta.env.VITE_SILENT_CLIENT_LOGGING === "true") {
+      if (
+        import.meta.env.VITE_SILENT_CLIENT_LOGGING === "true" ||
+        import.meta.env.MODE === "test"
+      ) {
         return;
       }
 
