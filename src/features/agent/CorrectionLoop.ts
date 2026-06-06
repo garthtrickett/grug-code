@@ -1,5 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { SelfCorrectionError } from "../auth/Errors.ts";
 import { AiService } from "../../lib/server/AiService.ts";
 import { makeWorkspaceController } from "../../lib/server/WorkspaceController.ts";
@@ -41,9 +43,60 @@ export const CorrectionLoopLive = Layer.effect(
 
           const controller = makeWorkspaceController(cwd);
 
+                    let patchToApply = instructions;
+
+          const isJson = (str: string): boolean => {
+            try {
+              const trimmed = str.trim();
+              return (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+            } catch {
+              return false;
+            }
+          };
+
+          if (!isJson(instructions)) {
+            yield* Effect.logInfo("[CorrectionLoop] Instructions are natural language. Querying AI to generate initial patch...");
+            
+            let targetFilesContext = "";
+            for (const file of targetFiles) {
+              const filePath = cwd ? path.resolve(cwd, file) : path.resolve(file);
+              const exists = yield* Effect.tryPromise({
+                try: () => fs.stat(filePath).then(() => true).catch(() => false),
+                catch: () => false,
+              });
+
+              let fileContent = "";
+              if (exists) {
+                fileContent = yield* Effect.tryPromise({
+                  try: () => fs.readFile(filePath, "utf-8"),
+                  catch: (e) => new Error(`Failed to read target file ${file}: ${String(e)}`),
+                }).pipe(
+                  Effect.catchAll(() => Effect.succeed(""))
+                );
+              }
+              targetFilesContext += `File Path: ${file}\n`;
+              targetFilesContext += `Current File Content:\n${fileContent || "(empty or new file)"}\n`;
+              targetFilesContext += "----------------------------------------\n";
+            }
+
+            const initialPrompt = `USER TASK / FEATURE REQUEST:\n"${instructions}"\n\nHere are the target files for this task and their current content:\n${targetFilesContext}\n\nPlease generate an Aider SEARCH/REPLACE block patch that implements these requested changes. Ensure your search blocks exactly match the current content of the files.`;
+
+            const systemPrompt = `You are Grug Code initial patch LLM.\nYour objective is to generate a precise corrective SEARCH/REPLACE block patch matching the user instructions and target files.\nRespond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do not add conversational text.`;
+
+            const initialPatch = yield* ai.generateStructuredObject({
+              system: systemPrompt,
+              prompt: initialPrompt,
+              schema: PatchResponseSchema,
+            }).pipe(
+              Effect.mapError((err) => new SelfCorrectionError({ message: `AI initial patch generation failed: ${err.message}`, cause: err }))
+            );
+
+            patchToApply = JSON.stringify(initialPatch);
+          }
+
           // Phase 1: Programmatically apply the initial patch
           yield* Effect.logInfo("[CorrectionLoop] Applying initial instructions patch...");
-          yield* controller.applyPatch(tx, instructions).pipe(
+          yield* controller.applyPatch(tx, patchToApply).pipe(
             Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply initial instructions patch: ${err.message}`, cause: err }))
           );
 
