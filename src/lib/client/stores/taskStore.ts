@@ -59,6 +59,11 @@ export const isPlanningSignal = signal<boolean>(false);
 export const proposedFilesSignal = signal<readonly string[]>([]);
 export const proposedTasksSignal = signal<readonly PlanTask[]>([]);
 
+export const discussionHistorySignal = signal<readonly { role: "user" | "assistant"; text: string }[]>([]);
+export const discussionTextSignal = signal<string>("");
+export const suggestedOptionsSignal = signal<readonly string[]>([]);
+export const isDiscussingSignal = signal<boolean>(false);
+
 export const initializeGrugToken = () => {
   if (typeof document !== "undefined") {
     const meta = document.querySelector('meta[name="grug-session-token"]');
@@ -112,6 +117,10 @@ export const taskStore = {
       isPlanningSignal.value = false;
       proposedFilesSignal.value = [];
       proposedTasksSignal.value = [];
+      discussionHistorySignal.value = [];
+      discussionTextSignal.value = "";
+      suggestedOptionsSignal.value = [];
+      isDiscussingSignal.value = false;
       if (typeof localStorage !== "undefined") {
         localStorage.removeItem("grug-active-tx");
         localStorage.removeItem("grug-active-tasks");
@@ -119,15 +128,19 @@ export const taskStore = {
       }
     }),
 
-  researchFeature: (description: string, cwd?: string, selectedScope?: string, provider?: "gemini" | "openai" | "deepseek") =>
+  researchFeature: (
+    description: string,
+    cwd?: string,
+    selectedScope?: string,
+    provider?: "gemini" | "openai" | "deepseek",
+    mode: "standard" | "discussion" = "standard",
+    history?: readonly { role: "user" | "assistant"; text: string }[]
+  ) =>
     Effect.gen(function* () {
       errorSignal.value = null;
       isResearchingSignal.value = true;
-      isPlanningSignal.value = false;
-      proposedFilesSignal.value = [];
-      proposedTasksSignal.value = [];
       
-      yield* clientLog("info", `[taskStore] Researching codebase for feature: ${description}`);
+      yield* clientLog("info", `[taskStore] Researching codebase in mode: ${mode} for feature: ${description}`);
 
       const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
 
@@ -138,7 +151,13 @@ export const taskStore = {
           fetch("/api/workspace/research", {
             method: "POST",
             headers: getHeaders(),
-            body: JSON.stringify({ userPrompt: description, cwd: requestCwd, provider }),
+            body: JSON.stringify({
+              userPrompt: description,
+              cwd: requestCwd,
+              provider,
+              mode,
+              history,
+            }),
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });
@@ -162,17 +181,34 @@ export const taskStore = {
       yield* clientLog("info", "[taskStore] Parsing response JSON payload...");
 
       const researchResult = yield* Effect.tryPromise({ 
-        try: () => response.json() as Promise<{ target_files: readonly string[]; plan: readonly PlanTask[] }>,
+        try: () => response.json() as Promise<{
+          status: "discussion" | "resolved";
+          discussionText?: string;
+          suggestedOptions?: readonly string[];
+          target_files?: readonly string[];
+          plan?: readonly PlanTask[];
+        }>,
         catch: (e) => new Error(`Failed to parse research data: ${String(e)}`),
       });
 
       yield* clientLog("info", "[taskStore] Parse successfully completed, updating signals...");
 
-      proposedFilesSignal.value = researchResult.target_files;
-      proposedTasksSignal.value = researchResult.plan;
-      isPlanningSignal.value = true;
+      if (researchResult.status === "discussion") {
+        discussionTextSignal.value = researchResult.discussionText || "";
+        suggestedOptionsSignal.value = researchResult.suggestedOptions || [];
+        isDiscussingSignal.value = true;
+        isPlanningSignal.value = false;
+        if (history) {
+          discussionHistorySignal.value = history;
+        }
+      } else {
+        proposedFilesSignal.value = researchResult.target_files || [];
+        proposedTasksSignal.value = researchResult.plan || [];
+        isPlanningSignal.value = true;
+        isDiscussingSignal.value = false;
+      }
 
-      yield* clientLog("info", `[taskStore] Research completed. Found ${researchResult.target_files.length} proposed files.`);
+      yield* clientLog("info", `[taskStore] Research completed with status: ${researchResult.status}`);
       return researchResult;
     }),
 

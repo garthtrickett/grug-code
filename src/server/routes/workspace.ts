@@ -349,6 +349,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         projectStructure,
         cwd: body.cwd,
         provider: body.provider,
+        mode: body.mode,
+        history: body.history,
       });
       yield* Effect.logInfo("[WorkspaceRoute] ResearchLoop.run process completed successfully.");
 
@@ -373,6 +375,11 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     body: t.Object({
       userPrompt: t.String(),
       cwd: t.Optional(t.String()),
-      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")]))
+      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")])),
+      mode: t.Optional(t.Union([t.Literal("standard"), t.Literal("discussion")])),
+      history: t.Optional(t.Array(t.Object({
+        role: t.Union([t.Literal("user"), t.Literal("assistant")]),
+        text: t.String()
+      })))
     })
   });

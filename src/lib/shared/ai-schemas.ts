@@ -17,6 +17,11 @@ export const PlanningResponseSchema = z.discriminatedUnion("status", [
     request_skeletons_for: z.array(z.string()),
   }),
   z.object({
+    status: z.literal("discussion"),
+    discussionText: z.string(),
+    suggestedOptions: z.array(z.string()),
+  }),
+  z.object({
     status: z.literal("resolved"),
     target_files: z.array(z.string()),
     plan: z.array(PlanTaskSchema),

@@ -102,14 +102,47 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
 
     const result = await Effect.runPromise(program);
 
+    expect(result.status).toBe("resolved");
     expect(result.target_files).toEqual(["src/services/payment.ts"]);
-    expect(result.plan.length).toBe(1);
-    expect(result.plan[0]?.id).toBe("step-1");
+    expect(result.plan?.length).toBe(1);
+    expect(result.plan?.[0]?.id).toBe("step-1");
     expect(callCount).toBe(2);
     expect(capturedProviders).toEqual(["openai", "openai"]);
 
     expect(fs.stat).toHaveBeenCalled();
     expect(fs.readFile).toHaveBeenCalled();
+  });
+
+  it("should transition directly to discussion status when mode is discussion", async () => {
+    const loopResponses = [
+      {
+        status: "discussion",
+        discussionText: "Grug wants to discuss Option A.",
+        suggestedOptions: ["Option A"],
+      },
+    ];
+
+    const aiLayer = mockAiService(loopResponses);
+    const program = Effect.flatMap(ResearchLoop, (loop) =>
+      loop.run({
+        userPrompt: "Discuss payments",
+        projectStructure: JSON.stringify([]),
+        provider: "openai",
+        mode: "discussion",
+      })
+    ).pipe(
+      Effect.provide(ResearchLoopLive),
+      Effect.provide(aiLayer),
+      Effect.provide(TreeSitterParserLive)
+    );
+
+    const result = await Effect.runPromise(program);
+
+    expect(result.status).toBe("discussion");
+    expect(result.discussionText).toBe("Grug wants to discuss Option A.");
+    expect(result.suggestedOptions).toEqual(["Option A"]);
+    expect(callCount).toBe(1);
+    expect(capturedProviders).toEqual(["openai"]);
   });
 
   it("should reject and abort with LoopThresholdExceeded when status remains exploring for 4 turns", async () => {

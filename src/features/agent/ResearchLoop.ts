@@ -22,10 +22,18 @@ export interface IResearchLoop {
     readonly projectStructure: string;
     readonly cwd?: string;
     readonly provider?: "gemini" | "openai" | "deepseek";
+    readonly mode?: "standard" | "discussion";
+    readonly history?: readonly {
+      readonly role: "user" | "assistant";
+      readonly text: string;
+    }[];
   }) => Effect.Effect<
     {
-      readonly target_files: readonly string[];
-      readonly plan: readonly PlanTask[];
+      readonly status: "discussion" | "resolved";
+      readonly discussionText?: string;
+      readonly suggestedOptions?: readonly string[];
+      readonly target_files?: readonly string[];
+      readonly plan?: readonly PlanTask[];
     },
     LoopThresholdExceeded | ResearchLoopError | AIInferenceError | ParserError,
     AiService | TreeSitterParser
@@ -40,16 +48,22 @@ export class ResearchLoop extends Context.Tag("ResearchLoop")<
 export const ResearchLoopLive = Layer.succeed(
   ResearchLoop,
   ResearchLoop.of({
-    run: ({ userPrompt, projectStructure, cwd, provider }) =>
+    run: ({ userPrompt, projectStructure, cwd, provider, mode = "standard", history = [] }) =>
       Effect.gen(function* () {
-        yield* Effect.logInfo("[ResearchLoop] Starting Stage 1 Skeletal Research Loop...");
+        yield* Effect.logInfo(`[ResearchLoop] Starting Stage 1 Skeletal Research Loop in mode: ${mode}`);
 
         const ai = yield* AiService;
         const parserService = yield* TreeSitterParser;
 
         const skeletonsMap = new Map<string, string>();
         let turnCount = 0;
-        let resolvedPlan: { target_files: readonly string[]; plan: readonly PlanTask[] } | null = null;
+        let resolvedPlan: {
+          readonly status: "discussion" | "resolved";
+          readonly discussionText?: string;
+          readonly suggestedOptions?: readonly string[];
+          readonly target_files?: readonly string[];
+          readonly plan?: readonly PlanTask[];
+        } | null = null;
 
         const systemPrompt = `You are Grug Code Planning LLM, acting as a dependency-aware pre-planning research router.
 Your primary objective is to finalize the plan and transition to status "resolved" as quickly as possible (ideally on the VERY FIRST TURN).
@@ -60,6 +74,16 @@ Strict rules of state transition:
 3. Keep the number of skeletal exploration turns minimal (0 to 3 turns maximum) to maintain low-latency interactions.
 `;
 
+        const discussionSystemPrompt = `You are Grug Code Planning LLM, acting as an interactive pre-planning technical advisor.
+Since "discussion" mode is enabled, your primary objective is to analyze the user's request, provide a comprehensive discussion of potential solutions, technical trade-offs, and architecture BEFORE formulating a concrete plan.
+
+Do NOT output status "resolved" on your first turn. Instead:
+1. Transition to status "discussion".
+2. Write a detailed, friendly, and structured technical analysis in "discussionText" explaining the available options, code locations, and trade-offs.
+3. Suggest 2-3 logical buttons/reply prompts for the user in "suggestedOptions" (e.g., ["Compare with option B", "Ask Grug for more detail about...", "Proceed with implementing this plan"]).
+4. Once the user selects a confirmation path or tells you to proceed, you can transition to status "resolved" and output the "target_files" and "plan" checklist.
+`;
+
         const getSafePath = (rawPath: string) =>
           Effect.gen(function* () {
             const rootDir = path.resolve(cwd || process.cwd());
@@ -67,7 +91,7 @@ Strict rules of state transition:
             if (!resolved.startsWith(rootDir)) {
               return yield* Effect.fail(
                 new ResearchLoopError({
-                  message: `Security validation failed: path traversal attempt detected for file path: \"${rawPath}\"`,
+                  message: `Security validation failed: path traversal attempt detected for file path: "${rawPath}"`,
                 })
               );
             }
@@ -88,23 +112,32 @@ Strict rules of state transition:
             skeletonsContext += "\n-----------------------------------------\n";
           }
 
+          let historyContext = "";
+          if (history && history.length > 0) {
+            historyContext = "\n--- RECENT DISCUSSION HISTORY ---\n";
+            for (const turn of history) {
+              historyContext += `\n${turn.role.toUpperCase()}: ${turn.text}\n`;
+            }
+            historyContext += "\n---------------------------------\n";
+          }
+
           let turnWarning = "";
           if (turnCount >= 3) {
-            turnWarning = `\n⚠️ CRITICAL WARNING: You are on turn #${turnCount} of skeletal exploration. You are approaching the maximum iteration limit! You MUST transition to "resolved" now and output the target files and step plan. Do NOT continue to "exploring" unless absolutely critical.`;
+            turnWarning = `\n⚠️ CRITICAL WARNING: You are on turn #${turnCount} of skeletal exploration. You are approaching the maximum iteration limit! You MUST transition to "resolved" or "discussion" now.`;
           }
 
           const prompt = `USER TASK / FEATURE REQUEST:
-\"${userPrompt}\"
-
+"${userPrompt}"
+${historyContext}
 LIGHTWEIGHT FLAT REPOSITORY MAP:
 ${projectStructure}
 ${skeletonsContext}${turnWarning}
 
-Please review your current state. If you need more skeletons to confirm assumptions about dependencies, imports, or type signatures, transition your status to \"exploring\" and list them. Otherwise, formulate the final plan and transition to \"resolved\".`;
+Please review your current state. If you are in discussion mode, provide a response with status "discussion" containing your detailed analysis in "discussionText" and options in "suggestedOptions". If you are ready to implement, transition to status "resolved" and provide "target_files" and "plan".`;
 
           yield* Effect.logDebug(`[ResearchLoop] Dispatching turn context to AiService...`);
           const response = yield* ai.generateStructuredObject({
-            system: systemPrompt,
+            system: mode === "discussion" ? discussionSystemPrompt : systemPrompt,
             prompt,
             schema: PlanningResponseSchema,
             provider,
@@ -113,8 +146,16 @@ Please review your current state. If you need more skeletons to confirm assumpti
           if (response.status === "resolved") {
             yield* Effect.logInfo(`[ResearchLoop] LLM successfully resolved planning on turn #${turnCount}.`);
             resolvedPlan = {
+              status: "resolved",
               target_files: response.target_files,
               plan: response.plan,
+            };
+          } else if (response.status === "discussion") {
+            yield* Effect.logInfo(`[ResearchLoop] LLM returned discussion option on turn #${turnCount}.`);
+            resolvedPlan = {
+              status: "discussion",
+              discussionText: response.discussionText,
+              suggestedOptions: response.suggestedOptions,
             };
           } else if (response.status === "exploring") {
             if (turnCount >= 4) {
@@ -133,7 +174,7 @@ Please review your current state. If you need more skeletons to confirm assumpti
 
             for (const rawPath of requestedPaths) {
               if (skeletonsMap.has(rawPath)) {
-                yield* Effect.logDebug(`[ResearchLoop] Bypassing already-hydrated skeleton: \"${rawPath}\"`);
+                yield* Effect.logDebug(`[ResearchLoop] Bypassing already-hydrated skeleton: "${rawPath}"`);
                 continue;
               }
 
@@ -143,13 +184,13 @@ Please review your current state. If you need more skeletons to confirm assumpti
                 try: () => fs.stat(safePath).then(() => true).catch(() => false),
                 catch: (cause) =>
                   new ResearchLoopError({
-                    message: `Failed to verify existence of candidate file path: \"${rawPath}\"`,
+                    message: `Failed to verify existence of candidate file path: "${rawPath}"`,
                     cause,
                   }),
               });
 
               if (!fileExists) {
-                yield* Effect.logWarning(`[ResearchLoop] Candidate file does not exist on disk: \"${rawPath}\". Recording stub.`);
+                yield* Effect.logWarning(`[ResearchLoop] Candidate file does not exist on disk: "${rawPath}". Recording stub.`);
                 skeletonsMap.set(rawPath, "// File not found in workspace");
                 continue;
               }
@@ -158,12 +199,12 @@ Please review your current state. If you need more skeletons to confirm assumpti
                 try: () => fs.readFile(safePath, "utf-8"),
                 catch: (cause) =>
                   new ResearchLoopError({
-                    message: `Failed to read candidate file: \"${rawPath}\"`,
+                    message: `Failed to read candidate file: "${rawPath}"`,
                     cause,
                   }),
               });
 
-              yield* Effect.logDebug(`[ResearchLoop] Parsing syntax structures for skeleton extraction: \"${rawPath}\"`);
+              yield* Effect.logDebug(`[ResearchLoop] Parsing syntax structures for skeleton extraction: "${rawPath}"`);
               const skeleton = yield* extractSkeleton(content, parserService.parser);
               skeletonsMap.set(rawPath, skeleton);
             }

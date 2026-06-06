@@ -17,6 +17,10 @@ import {
   isPlanningSignal,
   proposedFilesSignal,
   proposedTasksSignal,
+  discussionHistorySignal,
+  discussionTextSignal,
+  suggestedOptionsSignal,
+  isDiscussingSignal,
   type PlanTask,
 } from "../lib/client/stores/taskStore";
 import {
@@ -65,6 +69,10 @@ export class GrugTaskBoard extends LitElement {
       void isPlanningSignal.value;
       void proposedFilesSignal.value;
       void proposedTasksSignal.value;
+      void discussionHistorySignal.value;
+      void discussionTextSignal.value;
+      void suggestedOptionsSignal.value;
+      void isDiscussingSignal.value;
 
       const files = proposedFilesSignal.value;
       if (isPlanningSignal.value && this._checkedFiles.size === 0) {
@@ -102,16 +110,50 @@ export class GrugTaskBoard extends LitElement {
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
     const description = this._description;
     const provider = this._provider;
+    const mode = this._discussionMode ? "discussion" : "standard";
 
     runClientUnscoped(
       Effect.gen(function* () {
-        yield* taskStore.researchFeature(description, cwd, selectedScopeSignal.value, provider);
+        yield* taskStore.researchFeature(description, cwd, selectedScopeSignal.value, provider, mode, []);
       }).pipe(
         Effect.catchAll((err) =>
           clientLog("error", `[GrugTaskBoard] Failed to research feature: ${this.getErrorMessage(err)}`)
         )
       )
     );
+  };
+
+  private handleSendDiscussionReply = (text: string) => {
+    const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
+    const provider = this._provider;
+    const description = this._description;
+
+    const currentHistory = [
+      ...discussionHistorySignal.value,
+      { role: "user" as const, text: `User request/response: "${description}"` },
+      { role: "assistant" as const, text: discussionTextSignal.value },
+      { role: "user" as const, text }
+    ];
+
+    runClientUnscoped(
+      Effect.gen(function* () {
+        yield* taskStore.researchFeature(description, cwd, selectedScopeSignal.value, provider, "discussion", currentHistory);
+      }).pipe(
+        Effect.catchAll((err) =>
+          clientLog("error", `[GrugTaskBoard] Failed to send discussion reply: ${this.getErrorMessage(err)}`)
+        )
+      )
+    );
+  };
+
+  private handleCustomDiscussionSubmit = (e: Event) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const input = form.elements.namedItem("replyText") as HTMLInputElement;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    this.handleSendDiscussionReply(text);
   };
 
   private handleToggleFile(file: string) {
@@ -359,6 +401,83 @@ export class GrugTaskBoard extends LitElement {
                   </div>
                 </div>
               `
+            : isDiscussingSignal.value
+              ? html`
+                  <!-- Discussion Board -->
+                  <div class="bg-zinc-950 border border-zinc-800 p-8 rounded-lg shadow-md space-y-6">
+                    <div class="space-y-2 text-center border-b border-zinc-900 pb-4">
+                      <h2 class="text-xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
+                        <span>💬</span> Grug Code Discussion
+                      </h2>
+                      <p class="text-sm text-zinc-400">Let's discuss and analyze technical options before committing to code changes.</p>
+                    </div>
+
+                    <!-- Discussion logs -->
+                    <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                      ${discussionHistorySignal.value.map((turn) => html`
+                        <div class="flex flex-col gap-1 text-sm ${turn.role === "user" ? "items-end" : "items-start"}">
+                          <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                            ${turn.role === "user" ? "User" : "Grug"}
+                          </span>
+                          <div class="max-w-[85%] p-3 rounded-lg border text-zinc-200 ${turn.role === "user" ? "bg-zinc-900/60 border-zinc-800 text-right" : "bg-zinc-950 border-zinc-850"}">
+                            <p class="whitespace-pre-wrap">${turn.text}</p>
+                          </div>
+                        </div>
+                      `)}
+
+                      <!-- Current turn analysis -->
+                      <div class="flex flex-col gap-1 text-sm items-start">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Grug</span>
+                        <div class="max-w-[85%] p-4 rounded-lg bg-zinc-900/30 border border-zinc-800 text-zinc-100">
+                          <p class="whitespace-pre-wrap leading-relaxed">${discussionTextSignal.value}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Suggested options -->
+                    ${suggestedOptionsSignal.value.length > 0
+                      ? html`
+                          <div class="space-y-2">
+                            <span class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block">Suggested Responses</span>
+                            <div class="flex flex-wrap gap-2">
+                              ${suggestedOptionsSignal.value.map((option) => html`
+                                <button
+                                  @click=${() => this.handleSendDiscussionReply(option)}
+                                  class="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 hover:text-white border border-zinc-800 text-zinc-300 font-medium rounded text-xs transition-all cursor-pointer"
+                                >
+                                  ${option}
+                                </button>
+                              `)}
+                            </div>
+                          </div>
+                        `
+                      : ""}
+
+                    <!-- Reply input form -->
+                    <form @submit=${this.handleCustomDiscussionSubmit} class="flex items-center gap-3 pt-4 border-t border-zinc-900">
+                      <input
+                        name="replyText"
+                        type="text"
+                        required
+                        placeholder="Type your response or ask Grug a question..."
+                        class="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
+                      />
+                      <button
+                        type="submit"
+                        class="px-5 py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer"
+                      >
+                        Reply
+                      </button>
+                      <button
+                        type="button"
+                        @click=${this.handleCancelProposal}
+                        class="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  </div>
+                `
             : isPlanning
               ? html`
                   <!-- Proposed Plan / Confirmation Board -->
@@ -595,7 +714,7 @@ export class GrugTaskBoard extends LitElement {
                 </div>
               </div>
             `}
-      </div>
-    `;
-  }
+                </div>
+                    `;
+                    }
 }

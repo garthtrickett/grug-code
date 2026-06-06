@@ -15,6 +15,9 @@ import {
   isPlanningSignal,
   proposedFilesSignal,
   proposedTasksSignal,
+  discussionTextSignal,
+  suggestedOptionsSignal,
+  isDiscussingSignal,
 } from "./taskStore";
 import { hlcStore, hlcSignal } from "./hlcStore";
 
@@ -31,7 +34,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     global.fetch = originalFetch;
   });
 
-    it("should initialize default state correctly on clear", () => {
+  it("should initialize default state correctly on clear", () => {
     expect(tasksSignal.value.length).toBe(0);
     expect(isPausedSignal.value).toBe(false);
     expect(activeTxSignal.value).toBeNull();
@@ -156,7 +159,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(parsedBody.provider).toBe("openai");
   });
 
-    it("should successfully trigger researchFeature and update planning signals", async () => {
+  it("should successfully trigger researchFeature and update planning signals", async () => {
     const mockResearchData = {
       target_files: ["src/services/payment.ts"],
       plan: [
@@ -183,6 +186,37 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(isPlanningSignal.value).toBe(true);
     expect(proposedFilesSignal.value).toEqual(["src/services/payment.ts"]);
     expect(proposedTasksSignal.value).toEqual(mockResearchData.plan);
+  });
+
+  it("should successfully trigger researchFeature in discussion mode and update discussion signals", async () => {
+    const mockDiscussionData = {
+      status: "discussion",
+      discussionText: "Grug wants to discuss Option A and Option B first.",
+      suggestedOptions: ["Implement option A", "Implement option B"],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockDiscussionData,
+    }) as any;
+
+    const action = taskStore.researchFeature(
+      "Adjust processing",
+      "/mock/cwd",
+      "src",
+      "openai",
+      "discussion",
+      []
+    );
+    const result = await runClientPromise(action);
+
+    expect(result).toEqual(mockDiscussionData);
+    expect(isResearchingSignal.value).toBe(false);
+    expect(isDiscussingSignal.value).toBe(true);
+    expect(isPlanningSignal.value).toBe(false);
+    expect(discussionTextSignal.value).toBe("Grug wants to discuss Option A and Option B first.");
+    expect(suggestedOptionsSignal.value).toEqual(["Implement option A", "Implement option B"]);
   });
 
   it("should initialize task queue with custom planned steps when provided", async () => {
