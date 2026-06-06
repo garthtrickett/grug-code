@@ -43,7 +43,7 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
         ""
       ].join("\n")
     );
-            await fs.writeFile(
+                await fs.writeFile(
       path.join(tempDir, "tsconfig.json"),
       JSON.stringify({
         compilerOptions: {
@@ -51,6 +51,7 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
           target: "es2022",
           moduleResolution: "bundler",
           module: "es2022",
+          allowImportingTsExtensions: true,
           skipLibCheck: true,
           noEmit: true
         },
