@@ -50,3 +50,9 @@ export const FeatureImplementationPlanSchema = z.object({
 });
 
 export type FeatureImplementationPlan = z.infer<typeof FeatureImplementationPlanSchema>;
+
+export const ResearchRequestSchema = z.object({
+  mode: z.enum(["standard", "discussion"]).default("standard"),
+});
+
+export type ResearchRequest = z.infer<typeof ResearchRequestSchema>;
