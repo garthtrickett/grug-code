@@ -334,7 +334,7 @@ export const taskStore = {
         catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
       });
 
-            tasksSignal.value = initialTasks;
+      tasksSignal.value = initialTasks;
       activeTxSignal.value = tx;
       isPlanningSignal.value = false;
       proposedFilesSignal.value = [];
@@ -393,7 +393,7 @@ export const taskStore = {
           } catch {
             // Ignore temporary polling network drops
           }
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       };
       if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
@@ -402,8 +402,8 @@ export const taskStore = {
 
       console.info("[taskStore DEBUG] Sending fetch to /api/workspace/execute-step for task:", task.id);
 
-      const runFetch = Effect.gen(function* () {
-        const response = yield* Effect.tryPromise({
+      const runFetch = Effect.gen(function* () { 
+        const responseResult = yield* Effect.tryPromise({
           try: () =>
             fetch("/api/workspace/execute-step", {
               method: "POST",
@@ -417,15 +417,31 @@ export const taskStore = {
                 tasks: tasksSignal.value
               }),
             }),
-          catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-        });
+          catch: (e) => {
+            console.error("[taskStore DEBUG] Fetch call threw critical error:", e);
+            return new Error(`Failed to contact server: ${String(e)}`);
+          },
+        }).pipe(Effect.either);
 
+        if (responseResult._tag === "Left") {
+          errorSignal.value = responseResult.left.message;
+          yield* clientLog("error", "[taskStore] execute-step Fetch request rejected structurally", responseResult.left);
+          tasksSignal.value = tasksSignal.value.map((t) =>
+            t.id === task.id ? { ...t, status: "failed" } : t
+          );
+          return yield* Effect.fail(responseResult.left);
+        }
+
+        const response = responseResult.right;
         console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
 
         if (!response.ok) {
-          const errObj = yield* Effect.tryPromise({
+          const errObj = yield* Effect.tryPromise({ 
             try: () => response.json() as Promise<{ error: string }>,
-            catch: () => ({ error: `HTTP error ${response.status}` }),
+            catch: (e) => {
+              console.error("[taskStore DEBUG] Failed to parse failed-status response payload:", e);
+              return { error: `HTTP error ${response.status}` };
+            },
           });
           errorSignal.value = errObj.error;
           tasksSignal.value = tasksSignal.value.map((t) =>
@@ -434,14 +450,28 @@ export const taskStore = {
           if (typeof localStorage !== "undefined") {
             localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
           }
+          yield* clientLog("error", `[taskStore] execute-step returned error payload: ${errObj.error}`);
           return yield* Effect.fail(new Error(errObj.error));
         }
 
-        const updatedTx = yield* Effect.tryPromise({
+        const updatedTxResult = yield* Effect.tryPromise({
           try: () => response.json() as Promise<GitTransaction>,
-          catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
-        });
+          catch: (e) => {
+            console.error("[taskStore DEBUG] JSON parsing of updated transaction failed:", e);
+            return new Error(`Failed to parse transaction data: ${String(e)}`);
+          },
+        }).pipe(Effect.either);
 
+        if (updatedTxResult._tag === "Left") {
+          errorSignal.value = updatedTxResult.left.message;
+          yield* clientLog("error", "[taskStore] execute-step success response was unparseable", updatedTxResult.left);
+          tasksSignal.value = tasksSignal.value.map((t) =>
+            t.id === task.id ? { ...t, status: "failed" } : t
+          );
+          return yield* Effect.fail(updatedTxResult.left);
+        }
+
+        const updatedTx = updatedTxResult.right;
         activeTxSignal.value = updatedTx;
         tasksSignal.value = tasksSignal.value.map((t) =>
           t.id === task.id ? { ...t, status: "completed" } : t
@@ -482,7 +512,11 @@ export const taskStore = {
         
         const stepResult = yield* Effect.either(taskStore.executeStep(pendingTask, cwd));
         if (stepResult._tag === "Left") {
-          yield* clientLog("error", `[taskStore] Auto-pilot step failed: ${pendingTask.description}. Halting queue.`);
+          yield* clientLog(
+            "error", 
+            `[taskStore] Auto-pilot step failed: ${pendingTask.description}. Halting queue.`,
+            stepResult.left
+          );
           break;
         }
       }
