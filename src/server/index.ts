@@ -125,4 +125,3 @@ if (process.env.NODE_ENV !== "test" && !isMcpMode) {
 }
 
 export type App = typeof app;
-// Dummy line for src/server/index.ts

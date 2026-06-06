@@ -189,7 +189,11 @@ export const taskStore = {
       if (!tx) return;
 
       tasksSignal.value = tasksSignal.value.map((t) =>
-        t.id === task.id ? { ...t, status: "running" } : t
+        t.id === task.id 
+          ? { ...t, status: "running" } 
+          : t.status === "running" 
+            ? { ...t, status: "pending" } 
+            : t
       );
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
@@ -388,7 +392,7 @@ export const taskStore = {
     }),
 
   commitTask: (cwd?: string) =>
-    Effect.gen(function* () {
+    Effect.gen(function* () { 
       errorSignal.value = null;
       const tx = activeTxSignal.value;
       if (!tx) return;
