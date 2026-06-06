@@ -131,6 +131,8 @@ export const taskStore = {
 
       const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
 
+      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/research with userPrompt:", description);
+
       const response = yield* Effect.tryPromise({
         try: () =>
           fetch("/api/workspace/research", {
@@ -140,6 +142,8 @@ export const taskStore = {
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });
+
+      console.info("[taskStore DEBUG] Received response from /api/workspace/research with status:", response.status);
 
       yield* clientLog("info", "[taskStore] POST /api/workspace/research fetch response completed", response.status);
 
@@ -187,6 +191,8 @@ export const taskStore = {
 
       const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
 
+      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/init with taskId:", taskId);
+
       const response = yield* Effect.tryPromise({
         try: () =>
           fetch("/api/workspace/init", {
@@ -196,6 +202,8 @@ export const taskStore = {
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });
+
+      console.info("[taskStore DEBUG] Received response from /api/workspace/init with status:", response.status);
 
       if (!response.ok) {
         const errObj = yield* Effect.tryPromise({
@@ -299,6 +307,8 @@ export const taskStore = {
       };
       void pollProgress();
 
+      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/execute-step for task:", task.id);
+
       const response = yield* Effect.tryPromise({
         try: () =>
           fetch("/api/workspace/execute-step", {
@@ -313,6 +323,8 @@ export const taskStore = {
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });
+
+      console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
 
       polling = false; // Gracefully shut down active polling loop
       stepProgressSignal.value = "";

@@ -2,6 +2,27 @@ import { Effect } from "effect";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
+const pendingLogRequests: (() => Promise<void>)[] = [];
+let activeLogRequests = 0;
+const MAX_CONCURRENT_LOGS = 2;
+
+const processLogQueue = () => {
+  if (activeLogRequests >= MAX_CONCURRENT_LOGS || pendingLogRequests.length === 0) {
+    return;
+  }
+
+  const nextLog = pendingLogRequests.shift();
+  if (nextLog) {
+    activeLogRequests++;
+    nextLog()
+      .catch(() => {})
+      .finally(() => {
+        activeLogRequests--;
+        processLogQueue();
+      });
+  }
+};
+
 export const clientLog = (
   level: LogLevel,
   ...args: unknown[]
@@ -40,13 +61,16 @@ export const clientLog = (
         url: window.location.href,
       };
 
-      yield* Effect.tryPromise({
-        try: () => fetch("/api/log", {
+      const sendRequest = () =>
+        fetch("/api/log", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-        }),
-        catch: () => undefined,
+        }).then(() => {});
+
+      yield* Effect.sync(() => {
+        pendingLogRequests.push(sendRequest);
+        processLogQueue();
       });
     });
 
