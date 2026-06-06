@@ -18,6 +18,7 @@ export interface IAiService {
     readonly schema: z.Schema<T>;
   }) => Effect.Effect<T, AIInferenceError>;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly streamText: (options: {
     readonly modelName?: string;
     readonly system?: string;
@@ -76,7 +77,7 @@ export const AiServiceLive = Layer.sync(
         readonly system?: string;
         readonly prompt: string;
       }) =>
-        Effect.tryPromise({
+        Effect.try({
           try: () =>
             streamText({
               model: google(modelName),

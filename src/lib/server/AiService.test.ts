@@ -67,7 +67,7 @@ describe("AiService Layer", () => {
   });
 
   it("should successfully initiate a streaming text result", async () => {
-    mockStreamText.mockResolvedValue({
+    mockStreamText.mockReturnValue({
       textStream: "streaming-chunks",
     });
 
