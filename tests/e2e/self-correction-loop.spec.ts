@@ -59,7 +59,7 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
       }, null, 2)
     );
 
-    await fs.writeFile(
+        await fs.writeFile(
       path.join(tempDir, "vitest.config.ts"),
       [
         "import { defineConfig } from 'vitest/config';",
@@ -71,6 +71,17 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
         "  },",
         "});"
       ].join("\n")
+    );
+
+    await fs.writeFile(
+      path.join(tempDir, "package.json"),
+      JSON.stringify({
+        name: "e2e-sandbox",
+        type: "module",
+        scripts: {
+          test: "vitest run --config vitest.config.ts"
+        }
+      }, null, 2)
     );
 
     await execPromise("git add .", { cwd: tempDir });
