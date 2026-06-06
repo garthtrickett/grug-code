@@ -34,4 +34,7 @@ export const config = {
   gemini: {
     apiKey: getEnvOrDefault("GEMINI_API_KEY", ""),
   },
+  openai: {
+    apiKey: getEnvOrDefault("OPENAI_API_KEY", ""),
+  },
 };

@@ -1,0 +1,1 @@
+import { describe, it, expect } from "vitest";\nimport { config } from "./Config.ts";\n\ndescribe("Server Config Unit Checks", () => {\n  it("should load openai config correctly from process.env", () => {\n    expect(config.openai).toBeDefined();\n    expect(typeof config.openai.apiKey).toBe("string");\n  });\n});\n
