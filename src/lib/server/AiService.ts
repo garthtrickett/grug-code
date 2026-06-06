@@ -95,13 +95,14 @@ export const AiServiceLive = Layer.sync(
                     const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : provider === "deepseek" ? defaultDeepseekModel : defaultGeminiModel);
           const modelInstance = provider === "openai" ? openai(resolvedModel) : provider === "deepseek" ? deepseek(resolvedModel) : google(resolvedModel);
 
-          const result = yield* Effect.tryPromise({
+                    const result = yield* Effect.tryPromise({
             try: () =>
               generateObject({
                 model: modelInstance,
                 schema,
                 system,
                 prompt,
+                ...(provider === "deepseek" ? { mode: "json" } : {}),
               }),
             catch: (cause) =>
               new AIInferenceError({

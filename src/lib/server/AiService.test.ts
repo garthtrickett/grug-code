@@ -71,7 +71,7 @@ describe("AiService Layer", () => {
     expect(mockGenerateObject).toHaveBeenCalled();
   });
 
-  it("should successfully generate a structured object using Deepseek when requested", async () => {
+    it("should successfully generate a structured object using Deepseek when requested", async () => {
     const dummySchema = z.object({
       success: z.boolean(),
     });
@@ -91,7 +91,11 @@ describe("AiService Layer", () => {
     const result = await Effect.runPromise(program);
     expect(result).toEqual({ success: true });
     expect(mockOpenaiModel).toHaveBeenCalledWith("deepseek-v4-flash");
-    expect(mockGenerateObject).toHaveBeenCalled();
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "json",
+      })
+    );
   });
 
   it("should translate failed generateObject calls into AIInferenceError", async () => {
