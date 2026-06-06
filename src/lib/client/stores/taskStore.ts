@@ -393,7 +393,7 @@ export const taskStore = {
           } catch {
             // Ignore temporary polling network drops
           }
-          await new Promise((resolve) => setTimeout(resolve, 5));
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       };
       if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
