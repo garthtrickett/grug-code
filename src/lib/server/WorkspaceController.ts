@@ -141,7 +141,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-        applyPatch: (tx: GitTransaction, patch: string) =>
+    applyPatch: (tx: GitTransaction, patch: string) =>
       Effect.gen(function* () {
         yield* Effect.logInfo(`[WorkspaceController] Applying incoming Aider patch for transaction: ${tx.id}`);
         
@@ -174,13 +174,13 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
     runTestSuite: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
-        const cmd = ["bun", "test"];
+        const cmd = ["bun", "run", "test"];
         const result = yield* runCommand(cmd, cwd);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
         if (!success) {
-          yield* Effect.logWarning("[WorkspaceController] Testing suites reports failure.");
+          yield* Effect.logWarning(`[WorkspaceController] Testing suites reports failure. Output:\\n${result.stdout}\\n${result.stderr}`);
         } else {
           yield* Effect.logInfo("[WorkspaceController] Testing suites passed successfully.");
         }
@@ -287,71 +287,71 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           return yield* Effect.fail(new Error(`Failed to checkout base branch ${tx.baseBranch}: ${checkoutCmd.stderr}`));
         }
 
-                    const deleteCmd = yield* runCommand(["git", "branch", "-D", tx.ephemeralBranch], cwd);
-            if (deleteCmd.exitCode !== 0) {
-              return yield* Effect.fail(new Error(`Failed to force-delete task branch: ${deleteCmd.stderr}`));
-            }
+        const deleteCmd = yield* runCommand(["git", "branch", "-D", tx.ephemeralBranch], cwd);
+        if (deleteCmd.exitCode !== 0) {
+          return yield* Effect.fail(new Error(`Failed to force-delete task branch: ${deleteCmd.stderr}`));
+        }
 
-            yield* Effect.logInfo("[WorkspaceController] Ephemeral transaction branch purged safely.");
-          }),
+        yield* Effect.logInfo("[WorkspaceController] Ephemeral transaction branch purged safely.");
+      }),
 
-        listDirectories: () =>
-          Effect.gen(function* () {
-            yield* Effect.logInfo(`[WorkspaceController] Scanning subdirectories under root: ${cwd || "process.cwd()"}`);
-            const rootDir = path.resolve(cwd || process.cwd());
-            const dirs: string[] = [];
-            const queue: { abs: string; rel: string; depth: number }[] = [{ abs: rootDir, rel: "", depth: 0 }];
-            const IGNORED_NAMES = new Set([
-              "node_modules",
-              "dist",
-              "build",
-              "out",
-              "coverage",
-              "android",
-              "ios",
-              ".git",
-              ".vite",
-              ".idea",
-              ".vscode",
-              ".venv",
-              "test-results",
-              "playwright-report"
-            ]);
+    listDirectories: () =>
+      Effect.gen(function* () {
+        yield* Effect.logInfo(`[WorkspaceController] Scanning subdirectories under root: ${cwd || "process.cwd()"}`);
+        const rootDir = path.resolve(cwd || process.cwd());
+        const dirs: string[] = [];
+        const queue: { abs: string; rel: string; depth: number }[] = [{ abs: rootDir, rel: "", depth: 0 }];
+        const IGNORED_NAMES = new Set([
+          "node_modules",
+          "dist",
+          "build",
+          "out",
+          "coverage",
+          "android",
+          "ios",
+          ".git",
+          ".vite",
+          ".idea",
+          ".vscode",
+          ".venv",
+          "test-results",
+          "playwright-report"
+        ]);
 
-            while (queue.length > 0) {
-              const current = queue.shift();
-              if (!current) continue;
+        while (queue.length > 0) {
+          const current = queue.shift();
+          if (!current) continue;
 
-              const { abs, rel, depth } = current;
-              if (depth > 5) continue; // Prevent excessive deep searching
+          const { abs, rel, depth } = current;
+          if (depth > 5) continue; // Prevent excessive deep searching
 
-              const files = yield* Effect.tryPromise({
-                try: () => fs.readdir(abs, { withFileTypes: true }),
-                catch: (e) => new Error(`Failed to read directory ${abs}: ${String(e)}`),
-              });
+          const files = yield* Effect.tryPromise({
+            try: () => fs.readdir(abs, { withFileTypes: true }),
+            catch: (e) => new Error(`Failed to read directory ${abs}: ${String(e)}`),
+          });
 
-              for (const file of files) {
-                if (file.isDirectory()) {
-                  const name = file.name;
-                  if (IGNORED_NAMES.has(name) || name.startsWith(".")) {
-                    continue;
-                  }
-                  const nextRel = rel ? `${rel}/${name}` : name;
-                  const nextAbs = path.join(abs, name);
-
-                  // Safe traversal check
-                  if (!nextAbs.startsWith(rootDir)) {
-                    continue;
-                  }
-
-                  dirs.push(nextRel);
-                  queue.push({ abs: nextAbs, rel: nextRel, depth: depth + 1 });
-                } 
+          for (const file of files) {
+            if (file.isDirectory()) {
+              const name = file.name;
+              if (IGNORED_NAMES.has(name) || name.startsWith(".")) {
+                continue;
               }
-            }
+              const nextRel = rel ? `${rel}/${name}` : name;
+              const nextAbs = path.join(abs, name);
 
-            dirs.sort();
-            return dirs;
-          }),
-      };
-    };
+              // Safe traversal check
+              if (!nextAbs.startsWith(rootDir)) {
+                continue;
+              }
+
+              dirs.push(nextRel);
+              queue.push({ abs: nextAbs, rel: nextRel, depth: depth + 1 });
+            } 
+          }
+        }
+
+        dirs.sort();
+        return dirs;
+      }),
+  };
+};
