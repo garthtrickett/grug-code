@@ -22,7 +22,7 @@ export class McpService extends Context.Tag("McpService")<
 export const McpLoggerLive = Logger.replace(
   Logger.defaultLogger,
   Logger.make(({ logLevel, message }) => {
-    console.error(`[${logLevel.label}] [McpServer] ${message}`);
+    console.error(`[${logLevel.label}] [McpServer] ${String(message)}`);
   })
 );
 
@@ -211,7 +211,7 @@ export const McpServiceLive = Layer.sync(
       }
     );
 
-        // 7. list_directories
+    // 7. list_directories
     server.tool(
       "list_directories",
       "Recursively list subdirectories in the workspace, ignoring standard dependency folders.",
@@ -257,11 +257,19 @@ export const McpServiceLive = Layer.sync(
           let stdout = "";
           let stderr = "";
 
-          child.stdout?.on("data", (data) => {
-            stdout += data.toString();
+          child.stdout?.on("data", (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) {
+              stdout += chunk.toString("utf-8");
+            } else {
+              stdout += String(chunk);
+            }
           });
-          child.stderr?.on("data", (data) => {
-            stderr += data.toString();
+          child.stderr?.on("data", (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) {
+              stderr += chunk.toString("utf-8");
+            } else {
+              stderr += String(chunk);
+            }
           });
 
           child.on("close", (code) => {
@@ -277,15 +285,20 @@ export const McpServiceLive = Layer.sync(
             }
           });
 
-          child.on("error", (err: any) => {
-            if (err.code === "ENOENT") {
+          child.on("error", (err: unknown) => {
+            const hasCode = err !== null && typeof err === "object" && "code" in err;
+            const hasMessage = err !== null && typeof err === "object" && "message" in err;
+            const code = hasCode ? String((err as Record<string, unknown>)["code"]) : "";
+            const errMsg = hasMessage ? String((err as Record<string, unknown>)["message"]) : String(err);
+
+            if (code === "ENOENT") {
               resolve({
                 content: [{ type: "text", text: "Ripgrep command 'rg' not found on the local system. Please install ripgrep to enable regex searching." }],
                 isError: true,
               });
             } else {
               resolve({
-                content: [{ type: "text", text: `Failed to spawn ripgrep: ${err.message}` }],
+                content: [{ type: "text", text: `Failed to spawn ripgrep: ${errMsg}` }],
                 isError: true,
               });
             }
@@ -311,11 +324,19 @@ export const McpServiceLive = Layer.sync(
           let stdout = "";
           let stderr = "";
 
-          child.stdout?.on("data", (data) => {
-            stdout += data.toString();
+          child.stdout?.on("data", (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) {
+              stdout += chunk.toString("utf-8");
+            } else {
+              stdout += String(chunk);
+            }
           });
-          child.stderr?.on("data", (data) => {
-            stderr += data.toString();
+          child.stderr?.on("data", (chunk: unknown) => {
+            if (Buffer.isBuffer(chunk)) {
+              stderr += chunk.toString("utf-8");
+            } else {
+              stderr += String(chunk);
+            }
           });
 
           child.on("close", (code) => {
@@ -331,15 +352,20 @@ export const McpServiceLive = Layer.sync(
             }
           });
 
-          child.on("error", (err: any) => {
-            if (err.code === "ENOENT") {
+          child.on("error", (err: unknown) => {
+            const hasCode = err !== null && typeof err === "object" && "code" in err;
+            const hasMessage = err !== null && typeof err === "object" && "message" in err;
+            const code = hasCode ? String((err as Record<string, unknown>)["code"]) : "";
+            const errMsg = hasMessage ? String((err as Record<string, unknown>)["message"]) : String(err);
+
+            if (code === "ENOENT") {
               resolve({
                 content: [{ type: "text", text: "ast-grep command not found on the local system. Please install ast-grep to enable structural search." }],
                 isError: true,
               });
             } else {
               resolve({
-                content: [{ type: "text", text: `Failed to spawn ast-grep: ${err.message}` }],
+                content: [{ type: "text", text: `Failed to spawn ast-grep: ${errMsg}` }],
                 isError: true,
               });
             }
@@ -373,9 +399,10 @@ export const McpServiceLive = Layer.sync(
           return {
             content: [{ type: "text", text: content }],
           };
-        } catch (e: any) {
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
           return {
-            content: [{ type: "text", text: `Error: Failed to read file content: ${e.message}` }],
+            content: [{ type: "text", text: `Error: Failed to read file content: ${message}` }],
             isError: true,
           };
         }
@@ -405,6 +432,7 @@ export const McpServiceLive = Layer.sync(
  * stdout, which would otherwise corrupt the stdio-based MCP JSON-RPC protocol stream.
  */
 export const redirectConsoleLogToStderr = () => {
+  /* eslint-disable-next-line no-console */
   console.log = (...args: unknown[]) => {
     console.error("[Redirected stdout]:", ...args);
   };

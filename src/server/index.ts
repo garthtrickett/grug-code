@@ -15,7 +15,9 @@ import { getActiveToken } from "./middleware/security.ts";
 import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr } from "../lib/server/mcp/McpServer.ts";
 import { Effect } from "effect";
 
-const isMcpMode = (typeof Bun !== "undefined" && Bun.argv.includes("--mcp")) || process.argv.includes("--mcp");
+const isMcpMode = 
+  (typeof Bun !== "undefined" && Bun.argv && Bun.argv.includes("--mcp")) || 
+  (typeof process !== "undefined" && process.argv && process.argv.includes("--mcp"));
 
 if (isMcpMode) {
   redirectConsoleLogToStderr();

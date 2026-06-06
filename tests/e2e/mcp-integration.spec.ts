@@ -43,8 +43,12 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     });
 
     let stdoutData = "";
-    child.stdout.on("data", (chunk) => {
-      stdoutData += chunk.toString();
+    child.stdout.on("data", (chunk: unknown) => {
+      if (Buffer.isBuffer(chunk)) {
+        stdoutData += chunk.toString("utf-8");
+      } else {
+        stdoutData += String(chunk);
+      }
     });
 
     // We write a JSON-RPC 2.0 initialize request to perform the MCP handshake

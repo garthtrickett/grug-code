@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect } from "effect";
 import { McpService, McpServiceLive, McpLoggerLive } from "./McpServer.ts";
 import { PatchApplicationError } from "../AiderPatcher.ts";
+import * as fs from "node:fs/promises";
 
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockTools: Record<string, Function> = {};
@@ -27,23 +28,33 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => {
   };
 });
 
-const mockSpawnOn = vi.fn();
-const mockSpawnStdoutOn = vi.fn();
-const mockSpawnStderrOn = vi.fn();
+const { mockSpawnOn, mockSpawnStdoutOn, mockSpawnStderrOn } = vi.hoisted(() => ({
+  mockSpawnOn: vi.fn(),
+  mockSpawnStdoutOn: vi.fn(),
+  mockSpawnStderrOn: vi.fn(),
+}));
 
-vi.mock("node:child_process", () => {
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actualWithDefault = actual as typeof import("node:child_process") & { default?: Record<string, unknown> };
+  const spawnMock = vi.fn().mockImplementation(() => {
+    return {
+      stdout: {
+        on: mockSpawnStdoutOn,
+      },
+      stderr: {
+        on: mockSpawnStderrOn,
+      },
+      on: mockSpawnOn,
+    };
+  });
   return {
-    spawn: vi.fn().mockImplementation((command, args, options) => {
-      return {
-        stdout: {
-          on: mockSpawnStdoutOn,
-        },
-        stderr: {
-          on: mockSpawnStderrOn,
-        },
-        on: mockSpawnOn,
-      };
-    }),
+    ...actual,
+    spawn: spawnMock,
+    default: {
+      ...actualWithDefault.default,
+      spawn: spawnMock,
+    },
   };
 });
 
@@ -91,6 +102,14 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     await Effect.runPromise(initProgram);
   });
 
+  const getToolHandler = (name: string): Function => {
+    const handler = mockTools[name];
+    if (!handler) {
+      throw new Error(`MCP tool "${name}" is not registered`);
+    }
+    return handler;
+  };
+
   it("should initialize with correct metadata config", () => {
     expect(passedServerInfo).toEqual({
       name: "grug-code-mcp",
@@ -108,9 +127,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     };
     mockInitTransaction.mockReturnValue(Effect.succeed(mockTx));
 
-    const handler = mockTools["git_init_tx"];
-    expect(handler).toBeDefined();
-
+    const handler = getToolHandler("git_init_tx");
     const response = await handler({ taskId: "mcp-test-task" });
     expect(response).toEqual({
       content: [{ type: "text", text: JSON.stringify(mockTx) }]
@@ -123,7 +140,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     const mockTxWithCheckpoint = { ...tx, checkpoints: ["hash-123"] };
     mockCreateCheckpoint.mockReturnValue(Effect.succeed(mockTxWithCheckpoint));
 
-    const handler = mockTools["git_create_checkpoint"];
+    const handler = getToolHandler("git_create_checkpoint");
     const response = await handler({ tx, message: "Add landing page layout" });
 
     expect(response).toEqual({
@@ -137,7 +154,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     const mockTxRolledBack = { ...tx, checkpoints: [] };
     mockRollbackToCheckpoint.mockReturnValue(Effect.succeed(mockTxRolledBack));
 
-    const handler = mockTools["git_rollback"];
+    const handler = getToolHandler("git_rollback");
     const response = await handler({ tx, commitHash: "hash-base" });
 
     expect(response).toEqual({
@@ -150,7 +167,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     const tx = { id: "mcp-test", baseBranch: "main", ephemeralBranch: "eb", checkpoints: [] };
     mockCommitTransaction.mockReturnValue(Effect.void);
 
-    const handler = mockTools["git_commit"];
+    const handler = getToolHandler("git_commit");
     const response = await handler({ tx });
 
     expect(response).toEqual({
@@ -163,7 +180,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     const tx = { id: "mcp-test", baseBranch: "main", ephemeralBranch: "eb", checkpoints: [] };
     mockAbortTransaction.mockReturnValue(Effect.void);
 
-    const handler = mockTools["git_abort"];
+    const handler = getToolHandler("git_abort");
     const response = await handler({ tx });
 
     expect(response).toEqual({
@@ -183,7 +200,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     });
     mockApplyPatch.mockReturnValue(Effect.fail(patchErr));
 
-    const handler = mockTools["apply_patch"];
+    const handler = getToolHandler("apply_patch");
     const response = await handler({ tx, patch: "diff content" });
 
     expect(response.isError).toBe(true);
@@ -193,11 +210,11 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     expect(parsedData.failedSearchBlock).toBe("const x = 999;");
   });
 
-    it("should successfully list subdirectories under workspace root", async () => {
+  it("should successfully list subdirectories under workspace root", async () => {
     const dirs = ["src", "src/components"];
     mockListDirectories.mockReturnValue(Effect.succeed(dirs));
 
-    const handler = mockTools["list_directories"];
+    const handler = getToolHandler("list_directories");
     const response = await handler({});
 
     expect(response).toEqual({
@@ -207,8 +224,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
   });
 
   it("should successfully trigger search_code_ripgrep tool", async () => {
-    const handler = mockTools["search_code_ripgrep"];
-    expect(handler).toBeDefined();
+    const handler = getToolHandler("search_code_ripgrep");
 
     // Mock spawn behavior
     mockSpawnOn.mockImplementation((event: string, cb: Function) => {
@@ -231,8 +247,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
   });
 
   it("should successfully trigger ast_grep_pattern tool", async () => {
-    const handler = mockTools["ast_grep_pattern"];
-    expect(handler).toBeDefined();
+    const handler = getToolHandler("ast_grep_pattern");
 
     mockSpawnOn.mockImplementation((event: string, cb: Function) => {
       if (event === "close") {
@@ -254,8 +269,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
   });
 
   it("should successfully trigger read_file_content tool and enforce security guards", async () => {
-    const handler = mockTools["read_file_content"];
-    expect(handler).toBeDefined();
+    const handler = getToolHandler("read_file_content");
 
     const mockReadFile = vi.mocked(fs.readFile);
     mockReadFile.mockResolvedValue("export const hello = 'world';");
