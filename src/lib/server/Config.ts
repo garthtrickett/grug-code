@@ -6,7 +6,6 @@ const getEnv = (key: string): string => {
   return value;
 };
 
-
 const getEnvOrDefault = (key: string, defaultValue: string): string => {
   return process.env[key] || defaultValue;
 };
@@ -15,7 +14,7 @@ export const config = {
   db: {
     url: getEnv("DATABASE_URL"),
   },
-    s3: {
+  s3: {
     bucketName: getEnvOrDefault("BUCKET_NAME", "life-io"),
     publicAvatarUrl: getEnvOrDefault("PUBLIC_AVATAR_URL", "http://localhost:9000/life-io"),
     endpointUrl: getEnvOrDefault("AWS_ENDPOINT_URL_S3", "http://localhost:9000"),
@@ -29,7 +28,7 @@ export const config = {
     isProduction: process.env.NODE_ENV === "production",
     rootDomain: process.env.ROOT_DOMAIN || "life-io.xyz",
   },
-    jwt: {
+  jwt: {
     secret: getEnvOrDefault("JWT_SECRET", "Few4D1oru8s1GEZJY2mmg1hjdC2nszByiLuUba1bcbA="),
   },
   gemini: {
