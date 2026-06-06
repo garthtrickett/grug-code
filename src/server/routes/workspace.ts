@@ -34,6 +34,20 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .get("/progress", () => {
     return { progress: "Grug working hard..." };
   })
+  .get("/status", async ({ query, runEffect, set }) => {
+    const controller = makeWorkspaceController(query.cwd);
+    const effect = controller.readTransactionState();
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: (res.left).message };
+    }
+    return res.right;
+  }, {
+    query: t.Object({
+      cwd: t.Optional(t.String())
+    })
+  })
   .post("/directories", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.listDirectories();
@@ -131,9 +145,9 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-  .post("/init", async ({ body, runEffect, set }) => {
+    .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
-    const effect = controller.initTransaction(body.taskId, body.provider);
+    const effect = controller.initTransaction(body.taskId, body.provider, body.tasks);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
@@ -144,7 +158,14 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     body: t.Object({
       taskId: t.String(),
       cwd: t.Optional(t.String()),
-      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")]))
+      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")])),
+      tasks: t.Optional(t.Array(t.Object({
+        id: t.String(),
+        description: t.String(),
+        targetFiles: t.Array(t.String()),
+        status: t.Union([t.Literal("pending"), t.Literal("running"), t.Literal("completed"), t.Literal("failed")]),
+        developerNotes: t.Optional(t.String())
+      })))
     })
   })
   .post("/patch", async ({ body, runEffect, set }) => {
@@ -305,13 +326,15 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-  .post("/execute-step", async ({ body, runEffect, set }) => {
+    .post("/execute-step", async ({ body, runEffect, set }) => {
     const effect = Effect.flatMap(CorrectionLoop, (loop) =>
       loop.runStep({
         tx: body.tx,
         targetFiles: body.targetFiles,
         instructions: body.instructions,
         cwd: body.cwd,
+        tasks: body.tasks,
+        currentTaskId: body.currentTaskId
       })
     ).pipe(
       Effect.provide(CorrectionLoopLive),
@@ -330,7 +353,15 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       tx: txSchema,
       targetFiles: t.Array(t.String()),
       instructions: t.String(),
-      cwd: t.Optional(t.String())
+      cwd: t.Optional(t.String()),
+      currentTaskId: t.Optional(t.String()),
+      tasks: t.Optional(t.Array(t.Object({
+        id: t.String(),
+        description: t.String(),
+        targetFiles: t.Array(t.String()),
+        status: t.Union([t.Literal("pending"), t.Literal("running"), t.Literal("completed"), t.Literal("failed")]),
+        developerNotes: t.Optional(t.String())
+      })))
     })
   })
   .post("/research", async ({ body, runEffect, set }) => {
