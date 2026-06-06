@@ -309,57 +309,64 @@ export const taskStore = {
 
       console.info("[taskStore DEBUG] Sending fetch to /api/workspace/execute-step for task:", task.id);
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/workspace/execute-step", {
-            method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({
-              tx,
-              targetFiles: task.targetFiles,
-              instructions: task.developerNotes || task.description,
-              cwd,
+      const runFetch = Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            fetch("/api/workspace/execute-step", {
+              method: "POST",
+              headers: getHeaders(),
+              body: JSON.stringify({
+                tx,
+                targetFiles: task.targetFiles,
+                instructions: task.developerNotes || task.description,
+                cwd,
+              }),
             }),
-          }),
-        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-      });
-
-      console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
-
-      polling = false; // Gracefully shut down active polling loop
-      stepProgressSignal.value = "";
-
-      if (!response.ok) {
-        const errObj = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<{ error: string }>,
-          catch: () => ({ error: `HTTP error ${response.status}` }),
+          catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
         });
-        errorSignal.value = errObj.error;
+
+        console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
+
+        if (!response.ok) {
+          const errObj = yield* Effect.tryPromise({
+            try: () => response.json() as Promise<{ error: string }>,
+            catch: () => ({ error: `HTTP error ${response.status}` }),
+          });
+          errorSignal.value = errObj.error;
+          tasksSignal.value = tasksSignal.value.map((t) =>
+            t.id === task.id ? { ...t, status: "failed" } : t
+          );
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+          }
+          return yield* Effect.fail(new Error(errObj.error));
+        }
+
+        const updatedTx = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<GitTransaction>,
+          catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
+        });
+
+        activeTxSignal.value = updatedTx;
         tasksSignal.value = tasksSignal.value.map((t) =>
-          t.id === task.id ? { ...t, status: "failed" } : t
+          t.id === task.id ? { ...t, status: "completed" } : t
         );
+
         if (typeof localStorage !== "undefined") {
+          localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
           localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
         }
-        return yield* Effect.fail(new Error(errObj.error));
-      }
 
-      const updatedTx = yield* Effect.tryPromise({
-        try: () => response.json() as Promise<GitTransaction>,
-        catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
+        yield* clientLog("info", `[taskStore] Step successfully executed: ${task.description}`);
       });
 
-      activeTxSignal.value = updatedTx;
-      tasksSignal.value = tasksSignal.value.map((t) =>
-        t.id === task.id ? { ...t, status: "completed" } : t
+      yield* Effect.ensuring(
+        runFetch,
+        Effect.sync(() => {
+          polling = false;
+          stepProgressSignal.value = "";
+        })
       );
-
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
-        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
-      }
-
-      yield* clientLog("info", `[taskStore] Step successfully executed: ${task.description}`);
     }),
 
   pauseQueue: () =>

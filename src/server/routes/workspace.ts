@@ -31,6 +31,9 @@ const txSchema = t.Object({
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
+  .get("/progress", () => {
+    return { progress: "Grug working hard..." };
+  })
   .post("/directories", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.listDirectories();

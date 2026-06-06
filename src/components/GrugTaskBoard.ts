@@ -1,5 +1,5 @@
 import { LitElement, html } from "lit";
-import { customElement } from "lit/decorators.js";
+import { customElement, state } from "lit/decorators.js";
 import { effect } from "@preact/signals-core";
 import { Effect } from "effect";
 import * as select from "@zag-js/select";
@@ -33,6 +33,7 @@ export class GrugTaskBoard extends LitElement {
   private _checkedFiles = new Set<string>();
   private _description = "";
   private _provider: "gemini" | "openai" | "deepseek" = "gemini";
+  @state() private _discussionMode = false;
 
   protected override createRenderRoot() {
     return this; // Render in Light DOM to inherit Tailwind styles
@@ -88,6 +89,10 @@ export class GrugTaskBoard extends LitElement {
     }
     return String(err);
   }
+
+  private _toggleDiscussionMode = (e: Event) => {
+    this._discussionMode = (e.target as HTMLInputElement).checked;
+  };
 
   private handleInitSubmit = (e: Event) => {
     e.preventDefault();
@@ -459,6 +464,13 @@ export class GrugTaskBoard extends LitElement {
                             class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
                           />
                         </div>
+                      </div>
+
+                      <div class="flex items-center gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" .checked=${this._discussionMode} @change=${this._toggleDiscussionMode} class="rounded bg-zinc-900 border-zinc-800 text-zinc-100 focus:ring-0 focus:ring-offset-0 h-4 w-4" />
+                          <span class="text-sm text-zinc-300">Discussion Mode</span>
+                        </label>
                       </div>
 
                       <button 
