@@ -89,16 +89,18 @@ export class GrugTaskBoard extends LitElement {
     return String(err);
   }
 
-    private handleInitSubmit = (e: Event) => {
+  private handleInitSubmit = (e: Event) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     this._description = (form.elements.namedItem("description") as HTMLInputElement).value;
     this._provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai" | "deepseek";
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
+    const description = this._description;
+    const provider = this._provider;
 
     runClientUnscoped(
       Effect.gen(function* () {
-        yield* taskStore.researchFeature(this._description, cwd, selectedScopeSignal.value, this._provider);
+        yield* taskStore.researchFeature(description, cwd, selectedScopeSignal.value, provider);
       }).pipe(
         Effect.catchAll((err) =>
           clientLog("error", `[GrugTaskBoard] Failed to research feature: ${this.getErrorMessage(err)}`)
@@ -120,16 +122,18 @@ export class GrugTaskBoard extends LitElement {
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
     const selectedFiles = Array.from(this._checkedFiles);
     const taskId = `${this.slugify(this._description.substring(0, 30))}-${crypto.randomUUID().slice(0, 8)}`;
+    const description = this._description;
+    const provider = this._provider;
 
     runClientUnscoped(
       Effect.gen(function* () {
         yield* taskStore.initTaskQueue(
           taskId,
-          this._description,
+          description,
           selectedFiles,
           cwd,
           selectedScopeSignal.value,
-          this._provider,
+          provider,
           proposedTasksSignal.value
         );
       }).pipe(
@@ -316,7 +320,7 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-    override render() { 
+  override render() { 
     const tx = activeTxSignal.value;
     const error = errorSignal.value;
     const tasks = tasksSignal.value;

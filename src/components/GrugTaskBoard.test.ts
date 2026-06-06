@@ -34,7 +34,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   let activeTxSignal: any;
   let runClientPromise: any;
 
-    let isResearchingSignal: any;
+  let isResearchingSignal: any;
   let isPlanningSignal: any;
   let proposedFilesSignal: any;
   let proposedTasksSignal: any;
@@ -64,7 +64,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await tick();
   });
 
-    it("should render the AI provider select dropdown inside launch form", async () => {
+  it("should render the AI provider select dropdown inside launch form", async () => {
     await element.updateComplete;
     await tick();
 
@@ -157,7 +157,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     const approveSpy = vi.spyOn(taskStore, "initTaskQueue");
 
     const approveBtn = Array.from(element.querySelectorAll("button")).find(
-      (b) => b.textContent?.trim() === "Approve & Start Task Transaction"
+      (b: any) => b.textContent?.trim() === "Approve & Start Task Transaction"
     ) as HTMLButtonElement;
     
     expect(approveBtn).toBeDefined();
@@ -167,8 +167,8 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
       expect.stringContaining("-"),
       expect.any(String),
       ["src/a.ts"],
-      expect.anything(),
-      expect.anything(),
+      undefined,
+      expect.any(String),
       expect.any(String),
       proposedTasksSignal.value
     );
@@ -293,7 +293,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await tick();
 
     const removeBtn = (Array.from(element.querySelectorAll("button")) as any[]).find(
-      (b) => b.textContent?.trim() === "Remove"
+      (b: any) => b.textContent?.trim() === "Remove"
     );
     expect(removeBtn).toBeDefined();
 
