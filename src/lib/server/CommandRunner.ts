@@ -56,7 +56,7 @@ const getDirtyFilesFromGit = (cwd?: string) =>
     
     const result = yield* Effect.tryPromise({
       try: () => new Promise<{ exitCode: number; stdout: string }>((resolve, reject) => {
-                const child = spawn("git", ["diff", "--name-only"], { cwd });
+        const child = spawn("git", ["diff", "--name-only"], { cwd });
         let stdout = "";
         child.stdout?.on("data", (chunk: unknown) => {
           if (Buffer.isBuffer(chunk)) {
@@ -128,7 +128,7 @@ export const makeCommandRunner = (): CommandRunner => {
             }, options.timeoutMs);
           }
 
-                    child.stdout?.on("data", (chunk: unknown) => {
+          child.stdout?.on("data", (chunk: unknown) => {
             if (Buffer.isBuffer(chunk)) {
               stdout += chunk.toString("utf-8");
             } else if (typeof chunk === "string") {
@@ -175,7 +175,6 @@ export const makeCommandRunner = (): CommandRunner => {
 
     runTypeCheck: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
-        yield* Effect.logInfo("[CommandRunner] Initiating type-safety static verification pass...");
         const result = yield* run(["bun", "x", "tsc", "--noEmit"], { cwd, timeoutMs: timeoutMs ?? 30000 });
         
         if (result.success) {
@@ -194,13 +193,13 @@ export const makeCommandRunner = (): CommandRunner => {
     runTestSuite: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
-        const result = yield* run(["bun", "test"], { cwd, timeoutMs: timeoutMs ?? 45000 });
+        const result = yield* run(["bun", "run", "test"], { cwd, timeoutMs: timeoutMs ?? 45000 });
 
         if (result.success) {
           return { success: true, dirtyFiles: [] };
         }
 
-        yield* Effect.logWarning("[CommandRunner] Testing suites failed. Extracting file context...");
+        yield* Effect.logWarning(`[CommandRunner] Testing suites failed. Output:\\n${result.stdout}\\n${result.stderr}`);
         const dirtyFiles = yield* getDirtyFilesFromGit(cwd);
         return {
           success: false,
