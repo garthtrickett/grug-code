@@ -6,6 +6,7 @@ import { SelfCorrectionError } from "../auth/Errors.ts";
 import { AiService } from "../../lib/server/AiService.ts";
 import { makeWorkspaceController } from "../../lib/server/WorkspaceController.ts";
 import type { GitTransaction } from "../../lib/server/WorkspaceController.ts";
+import type { PlanTask } from "../../lib/shared/ai-schemas.ts";
 
 const PatchResponseSchema = z.object({
   summary: z.string().optional(),
