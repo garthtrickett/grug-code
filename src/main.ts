@@ -6,6 +6,39 @@ import { initializeGrugToken } from "./lib/client/stores/taskStore.ts";
 // Register custom elements
 import "./components/layouts/app-shell.ts";
 
+// Register global error listeners to forward unhandled client exceptions to the server log
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (event) => {
+    const payload = {
+      level: "error",
+      timestamp: new Date().toISOString(),
+      message: `[Unhandled Window Error] ${event.message} at ${event.filename}:${event.lineno}:${event.colno}`,
+      data: event.error ? { stack: String(event.error.stack) } : {},
+      url: window.location.href,
+    };
+    fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const payload = {
+      level: "error",
+      timestamp: new Date().toISOString(),
+      message: `[Unhandled Promise Rejection] ${String(event.reason)}`,
+      data: event.reason && typeof event.reason === "object" && "stack" in event.reason ? { stack: String(event.reason.stack) } : {},
+      url: window.location.href,
+    };
+    fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  });
+}
+
 const bootstrapApp = Effect.gen(function* () {
   // Extract and scrub security tokens on early page instantiation before any APIs run
   yield* Effect.sync(() => {

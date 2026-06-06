@@ -44,23 +44,6 @@ export const app = new Elysia()
   .onRequest(({ request }) => {
     console.info(`📡 [HTTP] ${request.method} ${request.url}`);
   })
-    .post("/api/log", ({ body }) => {
-    const logPayload = body as {
-      level: string;
-      message: string;
-      data: Record<string, unknown> | null | undefined;
-      url: string;
-    };
-    const level = logPayload.level;
-    const message = logPayload.message;
-    const data = logPayload.data;
-    const url = logPayload.url;
-    const formattedData = data && Object.keys(data).length ? JSON.stringify(data, null, 2) : "";
-    console.info(`📱 [Client ${level.toUpperCase()}] ${message} ${formattedData} (URL: ${url})`);
-    return { success: true };
-  })
-  .use(authRoutes)
-  .use(workspaceRoutes)
   .use(cors({
     origin: [
       /localhost.*/,
@@ -75,6 +58,39 @@ export const app = new Elysia()
     credentials: true,
   }))
   .use(effectPlugin)
+  .post("/api/log", async ({ body, runEffect }) => {
+    const logPayload = body as {
+      level: string;
+      message: string;
+      data: unknown;
+      url: string;
+      timestamp?: string;
+    };
+    const { level, message, data, url, timestamp } = logPayload;
+    const clientTimestamp = timestamp || new Date().toISOString();
+    const formattedData = data && (typeof data === "object" && Object.keys(data).length > 0) ? ` | Data: ${JSON.stringify(data)}` : "";
+    const logMsg = `📱 [Client] [${clientTimestamp}] ${message}${formattedData} (URL: ${url})`;
+
+    const logEffect = (() => {
+      switch (level?.toLowerCase()) {
+        case "error":
+          return Effect.logError(logMsg);
+        case "warn":
+        case "warning":
+          return Effect.logWarning(logMsg);
+        case "debug":
+          return Effect.logDebug(logMsg);
+        case "info":
+        default:
+          return Effect.logInfo(logMsg);
+      }
+    })();
+
+    await runEffect(logEffect);
+    return { success: true };
+  })
+  .use(authRoutes)
+  .use(workspaceRoutes)
   .use(
     staticPlugin({
       assets: "./dist/assets",
