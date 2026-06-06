@@ -70,7 +70,7 @@ export class GrugTaskBoard extends LitElement {
     const description = (form.elements.namedItem("description") as HTMLInputElement).value;
     const targetFilesRaw = (form.elements.namedItem("targetFiles") as HTMLInputElement).value;
     const targetFiles = targetFilesRaw.split(",").map((f) => f.trim()).filter(Boolean);
-    const provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai";
+        const provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai" | "deepseek";
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
 
     runClientUnscoped(
@@ -321,6 +321,7 @@ export class GrugTaskBoard extends LitElement {
                       >
                         <option value="gemini">Google Gemini (Default)</option>
                         <option value="openai">OpenAI (GPT-4o)</option>
+                        <option value="deepseek">Deepseek V4 flash</option>
                       </select>
                     </div>
 

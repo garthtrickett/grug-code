@@ -20,11 +20,11 @@ export interface GitTransaction {
   readonly baseBranch: string;
   readonly ephemeralBranch: string;
   readonly checkpoints: readonly string[];
-  readonly provider?: "gemini" | "openai";
+  readonly provider?: "gemini" | "openai" | "deepseek";
 }
 
 export interface WorkspaceController {
-  readonly initTransaction: (taskId: string, provider?: "gemini" | "openai") => Effect.Effect<GitTransaction, Error>;
+  readonly initTransaction: (taskId: string, provider?: "gemini" | "openai" | "deepseek") => Effect.Effect<GitTransaction, Error>;
   readonly applyPatch: (tx: GitTransaction, patch: string) => Effect.Effect<void, Error>;
   readonly runTypeCheck: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
   readonly runTestSuite: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
@@ -104,8 +104,8 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
       return dirty;
     });
 
-  return {
-    initTransaction: (taskId: string, provider?: "gemini" | "openai") =>
+    return {
+    initTransaction: (taskId: string, provider?: "gemini" | "openai" | "deepseek") =>
       Effect.gen(function* () {
         yield* Effect.logInfo(`[WorkspaceController] Initializing Git transaction for task: ${taskId} with provider: ${provider ?? "gemini"}`);
 

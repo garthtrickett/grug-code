@@ -48,7 +48,7 @@ describe("AiService Layer", () => {
     expect(mockGenerateObject).toHaveBeenCalled();
   });
 
-  it("should successfully generate a structured object using OpenAI when requested", async () => {
+    it("should successfully generate a structured object using OpenAI when requested", async () => {
     const dummySchema = z.object({
       success: z.boolean(),
     });
@@ -68,6 +68,29 @@ describe("AiService Layer", () => {
     const result = await Effect.runPromise(program);
     expect(result).toEqual({ success: true });
     expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-4o-mini");
+    expect(mockGenerateObject).toHaveBeenCalled();
+  });
+
+  it("should successfully generate a structured object using Deepseek when requested", async () => {
+    const dummySchema = z.object({
+      success: z.boolean(),
+    });
+
+    mockGenerateObject.mockResolvedValue({
+      object: { success: true },
+    });
+
+    const program = Effect.flatMap(AiService, (ai) =>
+      ai.generateStructuredObject({
+        provider: "deepseek",
+        prompt: "Say yes",
+        schema: dummySchema,
+      })
+    ).pipe(Effect.provide(AiServiceLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toEqual({ success: true });
+    expect(mockOpenaiModel).toHaveBeenCalledWith("deepseek-v4-flash");
     expect(mockGenerateObject).toHaveBeenCalled();
   });
 
@@ -112,7 +135,7 @@ describe("AiService Layer", () => {
     expect(mockStreamText).toHaveBeenCalled();
   });
 
-  it("should successfully initiate an OpenAI streaming text result", async () => {
+    it("should successfully initiate an OpenAI streaming text result", async () => {
     mockStreamText.mockReturnValue({
       textStream: "openai-streaming-chunks",
     });
@@ -128,6 +151,25 @@ describe("AiService Layer", () => {
     expect(result).toBeDefined();
     expect((result as any).textStream).toBe("openai-streaming-chunks");
     expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-4o-mini");
+    expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it("should successfully initiate a Deepseek streaming text result", async () => {
+    mockStreamText.mockReturnValue({
+      textStream: "deepseek-streaming-chunks",
+    });
+
+    const program = Effect.flatMap(AiService, (ai) =>
+      ai.streamText({
+        provider: "deepseek",
+        prompt: "Stream this",
+      })
+    ).pipe(Effect.provide(AiServiceLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toBeDefined();
+    expect((result as any).textStream).toBe("deepseek-streaming-chunks");
+    expect(mockOpenaiModel).toHaveBeenCalledWith("deepseek-v4-flash");
     expect(mockStreamText).toHaveBeenCalled();
   });
 });

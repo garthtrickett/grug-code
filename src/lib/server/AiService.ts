@@ -14,7 +14,7 @@ export class AIInferenceError extends Data.TaggedError("AIInferenceError")<{
 
 export interface IAiService {
   readonly generateStructuredObject: <T>(options: {
-    readonly provider?: "gemini" | "openai";
+    readonly provider?: "gemini" | "openai" | "deepseek";
     readonly modelName?: string;
     readonly system?: string;
     readonly prompt: string;
@@ -22,7 +22,7 @@ export interface IAiService {
   }) => Effect.Effect<T, AIInferenceError>;
 
   readonly streamText: (options: {
-    readonly provider?: "gemini" | "openai";
+    readonly provider?: "gemini" | "openai" | "deepseek";
     readonly modelName?: string;
     readonly system?: string;
     readonly prompt: string;
@@ -40,9 +40,14 @@ export const AiServiceLive = Layer.sync(
   () => {
     const google = createGoogleGenerativeAI({ apiKey: config.gemini.apiKey });
     const openai = createOpenAI({ apiKey: config.openai.apiKey });
+    const deepseek = createOpenAI({
+      apiKey: config.deepseek.apiKey || config.openai.apiKey,
+      baseURL: "https://api.deepseek.com",
+    });
 
     const defaultGeminiModel = "gemini-flash-latest";
     const defaultOpenaiModel = "openai/gpt-4o-mini";
+    const defaultDeepseekModel = "deepseek-v4-flash";
 
     return {
       generateStructuredObject: <T>({
@@ -52,7 +57,7 @@ export const AiServiceLive = Layer.sync(
         prompt,
         schema,
       }: {
-        readonly provider?: "gemini" | "openai";
+        readonly provider?: "gemini" | "openai" | "deepseek";
         readonly modelName?: string;
         readonly system?: string;
         readonly prompt: string;
@@ -87,8 +92,8 @@ export const AiServiceLive = Layer.sync(
             return { files: [] } as unknown as T;
           }
 
-          const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : defaultGeminiModel);
-          const modelInstance = provider === "openai" ? openai(resolvedModel) : google(resolvedModel);
+                    const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : provider === "deepseek" ? defaultDeepseekModel : defaultGeminiModel);
+          const modelInstance = provider === "openai" ? openai(resolvedModel) : provider === "deepseek" ? deepseek(resolvedModel) : google(resolvedModel);
 
           const result = yield* Effect.tryPromise({
             try: () =>
@@ -107,21 +112,21 @@ export const AiServiceLive = Layer.sync(
           return result.object;
         }),
 
-      streamText: ({
+            streamText: ({
         provider = "gemini",
         modelName,
         system,
         prompt,
       }: {
-        readonly provider?: "gemini" | "openai";
+        readonly provider?: "gemini" | "openai" | "deepseek";
         readonly modelName?: string;
         readonly system?: string;
         readonly prompt: string;
       }) =>
         Effect.try({
           try: () => {
-            const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : defaultGeminiModel);
-            const modelInstance = provider === "openai" ? openai(resolvedModel) : google(resolvedModel);
+            const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : provider === "deepseek" ? defaultDeepseekModel : defaultGeminiModel);
+            const modelInstance = provider === "openai" ? openai(resolvedModel) : provider === "deepseek" ? deepseek(resolvedModel) : google(resolvedModel);
             return streamText({
               model: modelInstance,
               system,

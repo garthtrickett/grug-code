@@ -15,7 +15,7 @@ export interface GitTransaction {
   readonly baseBranch: string;
   readonly ephemeralBranch: string;
   readonly checkpoints: readonly string[];
-  readonly provider?: "gemini" | "openai";
+  readonly provider?: "gemini" | "openai" | "deepseek";
 }
 
 const getStoredTx = (): GitTransaction | null => {
@@ -110,7 +110,7 @@ export const taskStore = {
       }
     }),
 
-  initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string, provider?: "gemini" | "openai") =>
+    initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string, provider?: "gemini" | "openai" | "deepseek") =>
     Effect.gen(function* () {
       errorSignal.value = null;
       yield* clientLog("info", `[taskStore] Initializing task queue for transaction: ${taskId}`);

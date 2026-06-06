@@ -34,7 +34,10 @@ export const config = {
   gemini: {
     apiKey: getEnvOrDefault("GEMINI_API_KEY", ""),
   },
-  openai: {
+    openai: {
     apiKey: getEnvOrDefault("OPENAI_API_KEY", ""),
+  },
+  deepseek: {
+    apiKey: getEnvOrDefault("DEEPSEEK_API_KEY", ""),
   },
 };

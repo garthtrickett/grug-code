@@ -21,7 +21,7 @@ export interface IResearchLoop {
     readonly userPrompt: string;
     readonly projectStructure: string;
     readonly cwd?: string;
-    readonly provider?: "gemini" | "openai";
+    readonly provider?: "gemini" | "openai" | "deepseek";
   }) => Effect.Effect<
     {
       readonly target_files: readonly string[];

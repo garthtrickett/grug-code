@@ -25,7 +25,7 @@ const txSchema = t.Object({
   baseBranch: t.String(),
   ephemeralBranch: t.String(),
   checkpoints: t.Array(t.String()),
-  provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai")]))
+  provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")]))
 });
 
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
@@ -128,7 +128,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-  .post("/init", async ({ body, runEffect, set }) => {
+    .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.initTransaction(body.taskId, body.provider);
     const res = await runEffect(Effect.either(effect));
@@ -137,11 +137,11 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       return { error: (res.left).message };
     }
     return res.right;
-  }, { 
+  }, {
     body: t.Object({
       taskId: t.String(),
       cwd: t.Optional(t.String()),
-      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai")]))
+      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")]))
     })
   })
   .post("/patch", async ({ body, runEffect, set }) => {
@@ -330,7 +330,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-  .post("/research", async ({ body, runEffect, set }) => {
+    .post("/research", async ({ body, runEffect, set }) => {
     const effect = Effect.gen(function* () {
       const mapper = yield* ProjectStructureMapper;
       const loop = yield* ResearchLoop;
@@ -366,6 +366,6 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     body: t.Object({
       userPrompt: t.String(),
       cwd: t.Optional(t.String()),
-      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai")]))
+      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai"), t.Literal("deepseek")]))
     })
   });
