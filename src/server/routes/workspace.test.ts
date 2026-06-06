@@ -470,4 +470,71 @@ export function hello(name: string): string {
     expect(result.discussionText).toBe("Grug has analyzed your codebase. Let's discuss Option A vs Option B.");
     expect(result.suggestedOptions).toEqual(["Compare Option A and B", "Go straight to Option A"]);
   });
+
+  it("should return the authoritative active transaction state on GET /api/workspace/status", async () => {
+    const token = getActiveToken();
+
+    const statusBefore = await app.handle(
+      new Request(`http://localhost/api/workspace/status?cwd=${encodeURIComponent(tempDir)}`, {
+        method: "GET",
+        headers: {
+          "X-Grug-Token": token,
+        },
+      })
+    );
+    expect(statusBefore.status).toBe(200);
+    const dataBefore = await statusBefore.json();
+    expect(dataBefore).toBeNull();
+
+    const dummyTasks = [
+      { id: "task-status-check", description: "Verify active endpoint", targetFiles: ["initial.txt"], status: "pending" }
+    ];
+
+    const initResponse = await app.handle(
+      new Request("http://localhost/api/workspace/init", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          taskId: "api-status-test",
+          cwd: tempDir,
+          provider: "gemini",
+          tasks: dummyTasks
+        }),
+      })
+    );
+
+    expect(initResponse.status).toBe(200);
+    const tx = await initResponse.json();
+
+    const statusAfter = await app.handle(
+      new Request(`http://localhost/api/workspace/status?cwd=${encodeURIComponent(tempDir)}`, {
+        method: "GET",
+        headers: {
+          "X-Grug-Token": token,
+        },
+      })
+    );
+    expect(statusAfter.status).toBe(200);
+    const dataAfter = await statusAfter.json() as any;
+
+    expect(dataAfter).not.toBeNull();
+    expect(dataAfter.tx.id).toBe("api-status-test");
+    expect(dataAfter.tx.ephemeralBranch).toBe(tx.ephemeralBranch);
+    expect(dataAfter.tasks.length).toBe(1);
+    expect(dataAfter.tasks[0].id).toBe("task-status-check");
+
+    await app.handle(
+      new Request("http://localhost/api/workspace/abort", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ tx, cwd: tempDir }),
+      })
+    );
+  });
 });

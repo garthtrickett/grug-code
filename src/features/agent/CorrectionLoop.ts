@@ -23,6 +23,8 @@ export interface ICorrectionLoop {
     readonly targetFiles: readonly string[];
     readonly instructions: string;
     readonly cwd?: string;
+    readonly tasks?: readonly PlanTask[];
+    readonly currentTaskId?: string;
   }) => Effect.Effect<GitTransaction, SelfCorrectionError>;
 }
 
@@ -37,8 +39,9 @@ export const CorrectionLoopLive = Layer.effect(
     const ai = yield* AiService;
 
     return {
-      runStep: ({ tx, targetFiles, instructions, cwd }) =>
+      runStep: ({ tx, targetFiles, instructions, cwd, tasks, currentTaskId }) =>
         Effect.gen(function* () {
+
           yield* Effect.logInfo(`[CorrectionLoop] Starting Stage 2 Self-Correction Loop for transaction: ${tx.id}`);
 
           const controller = makeWorkspaceController(cwd);
@@ -221,10 +224,18 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
             verified = true;
           }
 
-          // Save checkpoint upon complete verification
+                    // Save checkpoint upon complete verification
           yield* Effect.logInfo("[CorrectionLoop] Saving stable Git checkpoint milestone...");
           const checkpointMessage = `self-correction success - aggregate attempts: ${aggregateAttempts}`;
-          const finalTx = yield* controller.createCheckpoint(tx, checkpointMessage).pipe(
+          
+          let updatedTasks = tasks;
+          if (updatedTasks && currentTaskId) {
+            updatedTasks = updatedTasks.map((t) =>
+              t.id === currentTaskId ? { ...t, status: "completed" as const } : t
+            );
+          }
+
+          const finalTx = yield* controller.createCheckpoint(tx, checkpointMessage, updatedTasks).pipe(
             Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to save stable Git checkpoint: ${err.message}`, cause: err }))
           );
 

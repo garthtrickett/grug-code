@@ -94,14 +94,14 @@ const runCommand = (args: string[], cwd?: string, env?: Record<string, string>) 
 export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
   const txFile = path.resolve(cwd || process.cwd(), ".grug-active-transaction.json");
 
-  const updateStateFile = (tx: GitTransaction, tasks?: readonly PlanTask[]) =>
+    const updateStateFile = (tx: GitTransaction, tasks?: readonly PlanTask[]) =>
     Effect.gen(function* () {
       yield* Effect.logInfo("[WorkspaceController] Syncing transaction state to file: " + txFile);
       let currentTasks = tasks;
       if (!currentTasks) {
         const exists = yield* Effect.tryPromise({
           try: () => fs.stat(txFile).then(() => true).catch(() => false),
-          catch: () => false,
+          catch: (e) => new Error(`Failed to check file stat: ${String(e)}`),
         });
         if (exists) {
           const text = yield* Effect.tryPromise({
@@ -123,12 +123,12 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
       });
     });
 
-  const deleteStateFile = () =>
+    const deleteStateFile = () =>
     Effect.gen(function* () {
       yield* Effect.logInfo("[WorkspaceController] Cleaning up state file: " + txFile);
       const exists = yield* Effect.tryPromise({
         try: () => fs.stat(txFile).then(() => true).catch(() => false),
-        catch: () => false,
+        catch: (e) => new Error(`Failed to check file stat: ${String(e)}`),
       });
       if (exists) {
         yield* Effect.tryPromise({
@@ -434,12 +434,12 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         return dirs;
       }),
 
-    readTransactionState: () =>
+        readTransactionState: () =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Reading active transaction state from disk...");
-        const exists = yield* Effect.tryPromise({ 
+        const exists = yield* Effect.tryPromise({
           try: () => fs.stat(txFile).then(() => true).catch(() => false),
-          catch: () => false,
+          catch: (e) => new Error(`Failed to check file stat: ${String(e)}`),
         });
 
         if (!exists) {

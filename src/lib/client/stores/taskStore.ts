@@ -128,6 +128,59 @@ export const taskStore = {
       }
     }),
 
+  reconcileActiveTransaction: (cwd?: string) =>
+    Effect.gen(function* () {
+      errorSignal.value = null;
+      yield* clientLog("info", "[taskStore] Reconciling active transaction state with server...");
+
+      const url = cwd ? `/api/workspace/status?cwd=${encodeURIComponent(cwd)}` : "/api/workspace/status";
+
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch(url, {
+            method: "GET",
+            headers: getHeaders(),
+          }),
+        catch: (e) => new Error(`Failed to query transaction status: ${String(e)}`),
+      }).pipe(Effect.either);
+
+      if (response._tag === "Left") {
+        yield* clientLog("warn", `[taskStore] Server unreachable during reconciliation: ${response.left.message}. Using cached localStorage.`);
+        return;
+      }
+
+      const res = response.right;
+      if (!res.ok) {
+        yield* clientLog("error", `[taskStore] Status request failed: HTTP ${res.status}`);
+        return;
+      }
+
+      const state = yield* Effect.tryPromise({
+        try: () => res.json() as Promise<{ tx: GitTransaction; tasks: readonly PlanTask[] } | null>,
+        catch: (e) => new Error(`Failed to parse transaction status payload: ${String(e)}`),
+      });
+
+      if (state) {
+        yield* clientLog("info", `[taskStore] Active transaction reconciled successfully with server: id=${state.tx.id}`);
+        activeTxSignal.value = state.tx;
+        tasksSignal.value = state.tasks;
+
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("grug-active-tx", JSON.stringify(state.tx));
+          localStorage.setItem("grug-active-tasks", JSON.stringify(state.tasks));
+        }
+
+        const hasPending = state.tasks.some((t) => t.status === "pending");
+        if (!isPausedSignal.value && hasPending) {
+          yield* clientLog("info", "[taskStore] Active pending tasks found during reconciliation. Resuming autopilot runner...");
+          yield* Effect.fork(taskStore.autoRunQueue(cwd));
+        }
+      } else {
+        yield* clientLog("info", "[taskStore] No active transaction found on server. Clearing any stale local storage states.");
+        yield* taskStore.clear();
+      }
+    }),
+
   researchFeature: (
     description: string,
     cwd?: string,
@@ -227,6 +280,32 @@ export const taskStore = {
 
       const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
 
+      let initialTasks: readonly PlanTask[];
+      if (customTasks && customTasks.length > 0) {
+        initialTasks = customTasks;
+      } else {
+        initialTasks = [
+          {
+            id: `step-analysis-${crypto.randomUUID().slice(0, 8)}`,
+            description: `Analyze codebase target files: ${targetFiles.join(", ")}`,
+            targetFiles,
+            status: "completed",
+          },
+          {
+            id: `step-patch-${crypto.randomUUID().slice(0, 8)}`,
+            description: `Apply surgical patch changes for feature "${description}"`,
+            targetFiles,
+            status: "pending",
+          },
+          {
+            id: `step-verification-${crypto.randomUUID().slice(0, 8)}`,
+            description: "Verify codebase type-checking and run active unit/E2E test suite",
+            targetFiles: [],
+            status: "pending",
+          }
+        ];
+      }
+
       console.info("[taskStore DEBUG] Sending fetch to /api/workspace/init with taskId:", taskId);
 
       const response = yield* Effect.tryPromise({
@@ -234,7 +313,7 @@ export const taskStore = {
           fetch("/api/workspace/init", {
             method: "POST",
             headers: getHeaders(),
-            body: JSON.stringify({ taskId, cwd: requestCwd, provider }),
+            body: JSON.stringify({ taskId, cwd: requestCwd, provider, tasks: initialTasks }),
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });
@@ -250,350 +329,321 @@ export const taskStore = {
         return yield* Effect.fail(new Error(errObj.error));
       }
 
-          const tx = yield* Effect.tryPromise({
-            try: () => response.json() as Promise<GitTransaction>,
-            catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
-          });
+      const tx = yield* Effect.tryPromise({
+        try: () => response.json() as Promise<GitTransaction>,
+        catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
+      });
 
-          let initialTasks: readonly PlanTask[];
-          if (customTasks && customTasks.length > 0) {
-            initialTasks = customTasks;
-          } else {
-            initialTasks = [
-              {
-                id: `step-analysis-${crypto.randomUUID().slice(0, 8)}`,
-                description: `Analyze codebase target files: ${targetFiles.join(", ")}`,
-                targetFiles,
-                status: "completed",
-              },
-              {
-                id: `step-patch-${crypto.randomUUID().slice(0, 8)}`,
-                description: `Apply surgical patch changes for feature "${description}"`,
-                targetFiles,
-                status: "pending",
-              },
-              {
-                id: `step-verification-${crypto.randomUUID().slice(0, 8)}`,
-                description: "Verify codebase type-checking and run active unit/E2E test suite",
-                targetFiles: [],
-                status: "pending",
+      tasksSignal.value = initialTasks;
+      activeTxSignal.value = tx;
+      isPausedSignal.value = false;
+      isPlanningSignal.value = false;
+      proposedFilesSignal.value = [];
+      proposedTasksSignal.value = [];
+
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tx", JSON.stringify(tx));
+        localStorage.setItem("grug-active-tasks", JSON.stringify(initialTasks));
+        localStorage.setItem("grug-active-paused", "false");
+      }
+
+      const { hlcStore } = yield* Effect.promise(() => import("./hlcStore"));
+      yield* hlcStore.tick();
+
+      yield* clientLog("info", `[taskStore] Task queue initialized. Ephemeral branch: ${tx.ephemeralBranch}`);
+      
+      yield* Effect.fork(taskStore.autoRunQueue(cwd));
+
+      return tx;
+    }),
+
+  executeStep: (task: PlanTask, cwd?: string) =>
+    Effect.gen(function* () {
+      errorSignal.value = null;
+      stepProgressSignal.value = "Applying initial instructions...";
+      
+      const tx = activeTxSignal.value;
+      if (!tx) return;
+
+      tasksSignal.value = tasksSignal.value.map((t) =>
+        t.id === task.id 
+          ? { ...t, status: "running" } 
+          : t.status === "running" 
+            ? { ...t, status: "pending" } 
+            : t
+      );
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
+
+      yield* clientLog("info", `[taskStore] Executing step: ${task.description}`);
+
+      let polling = true;
+      const pollProgress = async () => {
+        while (polling) {
+          try {
+            const res = await fetch("/api/workspace/progress", { headers: getHeaders() });
+            if (res.ok) {
+              const data = await res.json() as { progress: string };
+              if (data.progress) {
+                stepProgressSignal.value = data.progress;
               }
-            ];
+            }
+          } catch {
+            // Ignore temporary polling network drops
           }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      };
+      if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
+        void pollProgress();
+      }
 
-          tasksSignal.value = initialTasks;
-          activeTxSignal.value = tx;
-          isPausedSignal.value = false;
-          isPlanningSignal.value = false;
-          proposedFilesSignal.value = [];
-          proposedTasksSignal.value = [];
+      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/execute-step for task:", task.id);
 
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("grug-active-tx", JSON.stringify(tx));
-            localStorage.setItem("grug-active-tasks", JSON.stringify(initialTasks));
-            localStorage.setItem("grug-active-paused", "false");
-          }
+      const runFetch = Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            fetch("/api/workspace/execute-step", {
+              method: "POST",
+              headers: getHeaders(),
+              body: JSON.stringify({
+                tx,
+                targetFiles: task.targetFiles,
+                instructions: task.developerNotes || task.description,
+                cwd,
+                currentTaskId: task.id,
+                tasks: tasksSignal.value
+              }),
+            }),
+          catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
+        });
 
-          // Hydrate logical clocks to verify causal flows
-          const { hlcStore } = yield* Effect.promise(() => import("./hlcStore"));
-          yield* hlcStore.tick();
+        console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
 
-          yield* clientLog("info", `[taskStore] Task queue initialized. Ephemeral branch: ${tx.ephemeralBranch}`);
-          
-          // Auto-trigger sequential autopilot queue runner in background
-          yield* Effect.fork(taskStore.autoRunQueue(cwd));
-
-          return tx;
-        }),
-
-      executeStep: (task: PlanTask, cwd?: string) =>
-        Effect.gen(function* () {
-          errorSignal.value = null;
-          stepProgressSignal.value = "Applying initial instructions...";
-          
-          const tx = activeTxSignal.value;
-          if (!tx) return;
-
+        if (!response.ok) {
+          const errObj = yield* Effect.tryPromise({
+            try: () => response.json() as Promise<{ error: string }>,
+            catch: () => ({ error: `HTTP error ${response.status}` }),
+          });
+          errorSignal.value = errObj.error;
           tasksSignal.value = tasksSignal.value.map((t) =>
-            t.id === task.id 
-              ? { ...t, status: "running" } 
-              : t.status === "running" 
-                ? { ...t, status: "pending" } 
-                : t
+            t.id === task.id ? { ...t, status: "failed" } : t
           );
           if (typeof localStorage !== "undefined") {
             localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
           }
+          return yield* Effect.fail(new Error(errObj.error));
+        }
 
-          yield* clientLog("info", `[taskStore] Executing step: ${task.description}`);
+        const updatedTx = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<GitTransaction>,
+          catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
+        });
 
-          // Active loopback background progress polling
-          let polling = true;
-          const pollProgress = async () => {
-            while (polling) {
-              try {
-                const res = await fetch("/api/workspace/progress", { headers: getHeaders() });
-                if (res.ok) {
-                  const data = await res.json() as { progress: string };
-                  if (data.progress) {
-                    stepProgressSignal.value = data.progress;
-                  }
-                }
-              } catch {
-                // Ignore temporary polling network drops
-              }
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-          };
-          if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
-            void pollProgress();
-          }
+        activeTxSignal.value = updatedTx;
+        tasksSignal.value = tasksSignal.value.map((t) =>
+          t.id === task.id ? { ...t, status: "completed" } : t
+        );
 
-          console.info("[taskStore DEBUG] Sending fetch to /api/workspace/execute-step for task:", task.id);
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
+          localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+        }
 
-          const runFetch = Effect.gen(function* () {
-            const response = yield* Effect.tryPromise({
-              try: () =>
-                fetch("/api/workspace/execute-step", {
-                  method: "POST",
-                  headers: getHeaders(),
-                  body: JSON.stringify({
-                    tx,
-                    targetFiles: task.targetFiles,
-                    instructions: task.developerNotes || task.description,
-                    cwd,
-                  }),
-                }),
-              catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-            });
+        yield* clientLog("info", `[taskStore] Step successfully executed: ${task.description}`);
+      });
 
-            console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
+      yield* Effect.ensuring(
+        runFetch,
+        Effect.sync(() => {
+          polling = false;
+          stepProgressSignal.value = "";
+        })
+      );
+    }),
 
-            if (!response.ok) {
-              const errObj = yield* Effect.tryPromise({
-                try: () => response.json() as Promise<{ error: string }>,
-                catch: () => ({ error: `HTTP error ${response.status}` }),
-              });
-              errorSignal.value = errObj.error;
-              tasksSignal.value = tasksSignal.value.map((t) =>
-                t.id === task.id ? { ...t, status: "failed" } : t
-              );
-              if (typeof localStorage !== "undefined") {
-                localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
-              }
-              return yield* Effect.fail(new Error(errObj.error));
-            }
+  autoRunQueue: (cwd?: string) =>
+    Effect.gen(function* () {
+      while (true) {
+        if (isPausedSignal.value) {
+          yield* clientLog("info", "[taskStore] Auto-pilot queue runner is paused. Halting.");
+          break;
+        }
 
-            const updatedTx = yield* Effect.tryPromise({
-              try: () => response.json() as Promise<GitTransaction>,
-              catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
-            });
+        const pendingTask = tasksSignal.value.find((t) => t.status === "pending");
+        if (!pendingTask) {
+          yield* clientLog("info", "[taskStore] No more pending tasks. Auto-pilot complete.");
+          break;
+        }
 
-            activeTxSignal.value = updatedTx;
-            tasksSignal.value = tasksSignal.value.map((t) =>
-              t.id === task.id ? { ...t, status: "completed" } : t
-            );
+        yield* clientLog("info", `[taskStore] Auto-pilot runner starting next step: ${pendingTask.description}`);
+        
+        const stepResult = yield* Effect.either(taskStore.executeStep(pendingTask, cwd));
+        if (stepResult._tag === "Left") {
+          yield* clientLog("error", `[taskStore] Auto-pilot step failed: ${pendingTask.description}. Halting queue.`);
+          break;
+        }
+      }
+    }),
 
-            if (typeof localStorage !== "undefined") {
-              localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
-              localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
-            }
+  pauseQueue: () =>
+    Effect.gen(function* () {
+      isPausedSignal.value = true;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-paused", "true");
+      }
+      yield* clientLog("info", "[taskStore] Task execution queue PAUSED by developer.");
+    }),
 
-            yield* clientLog("info", `[taskStore] Step successfully executed: ${task.description}`);
-          });
+  resumeQueue: (cwd?: string) =>
+    Effect.gen(function* () {
+      isPausedSignal.value = false;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-paused", "false");
+      }
+      yield* clientLog("info", "[taskStore] Task execution queue RESUMED.");
+      
+      yield* Effect.fork(taskStore.autoRunQueue(cwd));
+    }),
 
-          yield* Effect.ensuring(
-            runFetch,
-            Effect.sync(() => {
-              polling = false;
-              stepProgressSignal.value = "";
-            })
-          );
-        }),
+  editTaskNotes: (taskId: string, notes: string) =>
+    Effect.gen(function* () {
+      tasksSignal.value = tasksSignal.value.map((task) =>
+        task.id === taskId ? { ...task, developerNotes: notes } : task
+      );
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
+      yield* clientLog("debug", `[taskStore] Edited task notes for ${taskId}`);
+    }),
 
-      autoRunQueue: (cwd?: string) =>
-        Effect.gen(function* () {
-          while (true) {
-            if (isPausedSignal.value) {
-              yield* clientLog("info", "[taskStore] Auto-pilot queue runner is paused. Halting.");
-              break;
-            }
+  rollbackTo: (commitHash: string, cwd?: string) =>
+    Effect.gen(function* () {
+      errorSignal.value = null;
+      const tx = activeTxSignal.value;
+      if (!tx) {
+        return yield* Effect.fail(new Error("No active transaction found for rollback."));
+      }
 
-            const pendingTask = tasksSignal.value.find((t) => t.status === "pending");
-            if (!pendingTask) {
-              yield* clientLog("info", "[taskStore] No more pending tasks. Auto-pilot complete.");
-              break;
-            }
+      yield* clientLog("warn", `[taskStore] Initiating rollback to checkpoint hash: ${commitHash}`);
 
-            yield* clientLog("info", `[taskStore] Auto-pilot runner starting next step: ${pendingTask.description}`);
-            
-            const stepResult = yield* Effect.either(taskStore.executeStep(pendingTask, cwd));
-            if (stepResult._tag === "Left") {
-              yield* clientLog("error", `[taskStore] Auto-pilot step failed: ${pendingTask.description}. Halting queue.`);
-              break;
-            }
-          }
-        }),
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch("/api/workspace/rollback", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ tx, commitHash, cwd }),
+          }),
+        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
+      });
 
-      pauseQueue: () =>
-        Effect.gen(function* () {
-          isPausedSignal.value = true;
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("grug-active-paused", "true");
-          }
-          yield* clientLog("info", "[taskStore] Task execution queue PAUSED by developer.");
-        }),
+      if (!response.ok) {
+        const errObj = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<{ error: string }>,
+          catch: () => ({ error: `HTTP error ${response.status}` }),
+        });
+        errorSignal.value = errObj.error;
+        return yield* Effect.fail(new Error(errObj.error));
+      }
 
-      resumeQueue: (cwd?: string) =>
-        Effect.gen(function* () {
-          isPausedSignal.value = false;
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("grug-active-paused", "false");
-          }
-          yield* clientLog("info", "[taskStore] Task execution queue RESUMED.");
-          
-          // Auto-trigger background loop runner to continue execution
-          yield* Effect.fork(taskStore.autoRunQueue(cwd));
-        }),
+      const updatedTx = yield* Effect.tryPromise({
+        try: () => response.json() as Promise<GitTransaction>,
+        catch: (e) => new Error(`Failed to parse rollback transaction data: ${String(e)}`),
+      });
 
-      editTaskNotes: (taskId: string, notes: string) =>
-        Effect.gen(function* () {
-          tasksSignal.value = tasksSignal.value.map((task) =>
-            task.id === taskId ? { ...task, developerNotes: notes } : task
-          );
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
-          }
-          yield* clientLog("debug", `[taskStore] Edited task notes for ${taskId}`);
-        }),
+      activeTxSignal.value = updatedTx;
+      
+      tasksSignal.value = tasksSignal.value.map((task) =>
+        task.status === "completed" ? task : { ...task, status: "pending" }
+      );
 
-      rollbackTo: (commitHash: string, cwd?: string) =>
-        Effect.gen(function* () {
-          errorSignal.value = null;
-          const tx = activeTxSignal.value;
-          if (!tx) {
-            return yield* Effect.fail(new Error("No active transaction found for rollback."));
-          }
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
 
-          yield* clientLog("warn", `[taskStore] Initiating rollback to checkpoint hash: ${commitHash}`);
+      yield* clientLog("info", `[taskStore] Rollback completed. Checkpoints remaining: ${updatedTx.checkpoints.length}`);
+      return updatedTx;
+    }),
 
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch("/api/workspace/rollback", {
-                method: "POST",
-                headers: getHeaders(),
-                body: JSON.stringify({ tx, commitHash, cwd }),
-              }),
-            catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-          });
+  abortTask: (cwd?: string) =>
+    Effect.gen(function* () {
+      errorSignal.value = null;
+      const tx = activeTxSignal.value;
+      if (!tx) return;
 
-          if (!response.ok) {
-            const errObj = yield* Effect.tryPromise({
-              try: () => response.json() as Promise<{ error: string }>,
-              catch: () => ({ error: `HTTP error ${response.status}` }),
-            });
-            errorSignal.value = errObj.error;
-            return yield* Effect.fail(new Error(errObj.error));
-          }
+      yield* clientLog("warn", `[taskStore] Aborting active transaction: ${tx.id}`);
 
-          const updatedTx = yield* Effect.tryPromise({
-            try: () => response.json() as Promise<GitTransaction>,
-            catch: (e) => new Error(`Failed to parse rollback transaction data: ${String(e)}`),
-          });
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch("/api/workspace/abort", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ tx, cwd }),
+          }),
+        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
+      });
 
-          activeTxSignal.value = updatedTx;
-          
-          // Update tasks status: reset pending stages
-          tasksSignal.value = tasksSignal.value.map((task) =>
-            task.status === "completed" ? task : { ...task, status: "pending" }
-          );
+      if (!response.ok) {
+        const errObj = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<{ error: string }>,
+          catch: () => ({ error: `HTTP error ${response.status}` }),
+        });
+        errorSignal.value = errObj.error;
+        return yield* Effect.fail(new Error(errObj.error));
+      }
 
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
-            localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
-          }
+      tasksSignal.value = [];
+      activeTxSignal.value = null;
+      isPausedSignal.value = false;
 
-          yield* clientLog("info", `[taskStore] Rollback completed. Checkpoints remaining: ${updatedTx.checkpoints.length}`);
-          return updatedTx;
-        }),
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("grug-active-tx");
+        localStorage.removeItem("grug-active-tasks");
+        localStorage.removeItem("grug-active-paused");
+      }
 
-      abortTask: (cwd?: string) =>
-        Effect.gen(function* () {
-          errorSignal.value = null;
-          const tx = activeTxSignal.value;
-          if (!tx) return;
+      yield* clientLog("info", "[taskStore] Active transaction aborted and local workspace reset.");
+    }),
 
-          yield* clientLog("warn", `[taskStore] Aborting active transaction: ${tx.id}`);
+  commitTask: (cwd?: string) =>
+    Effect.gen(function* () { 
+      errorSignal.value = null;
+      const tx = activeTxSignal.value;
+      if (!tx) return;
 
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch("/api/workspace/abort", {
-                method: "POST",
-                headers: getHeaders(),
-                body: JSON.stringify({ tx, cwd }),
-              }),
-            catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-          });
+      yield* clientLog("info", `[taskStore] Committing transaction: ${tx.id}`);
 
-          if (!response.ok) {
-            const errObj = yield* Effect.tryPromise({
-              try: () => response.json() as Promise<{ error: string }>,
-              catch: () => ({ error: `HTTP error ${response.status}` }),
-            });
-            errorSignal.value = errObj.error;
-            return yield* Effect.fail(new Error(errObj.error));
-          }
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch("/api/workspace/commit", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ tx, cwd }),
+          }),
+        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
+      });
 
-          tasksSignal.value = [];
-          activeTxSignal.value = null;
-          isPausedSignal.value = false;
+      if (!response.ok) {
+        const errObj = yield* Effect.tryPromise({
+          try: () => response.json() as Promise<{ error: string }>,
+          catch: () => ({ error: `HTTP error ${response.status}` }),
+        });
+        errorSignal.value = errObj.error;
+        return yield* Effect.fail(new Error(errObj.error));
+      }
 
-          if (typeof localStorage !== "undefined") {
-            localStorage.removeItem("grug-active-tx");
-            localStorage.removeItem("grug-active-tasks");
-            localStorage.removeItem("grug-active-paused");
-          }
+      tasksSignal.value = [];
+      activeTxSignal.value = null;
+      isPausedSignal.value = false;
 
-          yield* clientLog("info", "[taskStore] Active transaction aborted and local workspace reset.");
-        }),
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("grug-active-tx");
+        localStorage.removeItem("grug-active-tasks");
+        localStorage.removeItem("grug-active-paused");
+      }
 
-      commitTask: (cwd?: string) =>
-        Effect.gen(function* () { 
-          errorSignal.value = null;
-          const tx = activeTxSignal.value;
-          if (!tx) return;
-
-          yield* clientLog("info", `[taskStore] Committing transaction: ${tx.id}`);
-
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch("/api/workspace/commit", {
-                method: "POST",
-                headers: getHeaders(),
-                body: JSON.stringify({ tx, cwd }),
-              }),
-            catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-          });
-
-          if (!response.ok) {
-            const errObj = yield* Effect.tryPromise({
-              try: () => response.json() as Promise<{ error: string }>,
-              catch: () => ({ error: `HTTP error ${response.status}` }),
-            });
-            errorSignal.value = errObj.error;
-            return yield* Effect.fail(new Error(errObj.error));
-          }
-
-          tasksSignal.value = [];
-          activeTxSignal.value = null;
-          isPausedSignal.value = false;
-
-          if (typeof localStorage !== "undefined") {
-            localStorage.removeItem("grug-active-tx");
-            localStorage.removeItem("grug-active-tasks");
-            localStorage.removeItem("grug-active-paused");
-          }
-
-          yield* clientLog("info", "[taskStore] Active transaction committed and merged successfully.");
-        }),
+      yield* clientLog("info", "[taskStore] Active transaction committed and merged successfully.");
+    }),
 };

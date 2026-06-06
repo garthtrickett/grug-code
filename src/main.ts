@@ -68,6 +68,12 @@ const bootstrapApp = Effect.gen(function* () {
   yield* clientLog("info", "[Main] Attempting session restoration...");
   yield* initAuth();
 
+  // 5. Reconcile active workspace transaction state with server-side authoritativeness
+  yield* clientLog("info", "[Main] Reconciling active workspace transaction state...");
+  const { taskStore: tStore } = yield* Effect.promise(() => import("./lib/client/stores/taskStore.ts"));
+  const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
+  yield* tStore.reconcileActiveTransaction(cwd);
+
   yield* clientLog("info", "[Main] Application successfully bootstrapped.");
 }).pipe(
   Effect.catchAll((err) =>

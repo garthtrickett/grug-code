@@ -407,7 +407,6 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     await runClientPromise(taskStore.pauseQueue());
     expect(isPausedSignal.value).toBe(true);
 
-    // Provide mocked autopilot fetch sequences for the resume trigger loop
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -500,6 +499,111 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(activeTxSignal.value).not.toBeNull();
 
     await runClientPromise(taskStore.abortTask());
+    expect(activeTxSignal.value).toBeNull();
+    expect(tasksSignal.value.length).toBe(0);
+  });
+
+  it("should reconcile active transaction state on boot and auto-resume execution", async () => {
+    const mockState = {
+      tx: {
+        id: "task-reconciled-999",
+        baseBranch: "main",
+        ephemeralBranch: "grug-task/task-reconciled-999",
+        checkpoints: ["hash-rec-1"],
+      },
+      tasks: [
+        {
+          id: "task-rec-step-1",
+          description: "Step 1 completed",
+          targetFiles: ["src/a.ts"],
+          status: "completed" as const,
+        },
+        {
+          id: "task-rec-step-2",
+          description: "Step 2 pending",
+          targetFiles: ["src/b.ts"],
+          status: "pending" as const,
+        }
+      ],
+    };
+
+    tasksSignal.value = [
+      {
+        id: "task-rec-step-1",
+        description: "Step 1 completed",
+        targetFiles: ["src/a.ts"],
+        status: "running" as const,
+      },
+      {
+        id: "task-rec-step-2",
+        description: "Step 2 pending",
+        targetFiles: ["src/b.ts"],
+        status: "pending" as const,
+      }
+    ];
+
+    activeTxSignal.value = {
+      id: "task-reconciled-999",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/task-reconciled-999",
+      checkpoints: [],
+    };
+
+    isPausedSignal.value = false;
+
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/workspace/status")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => mockState,
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ ...mockState.tx, checkpoints: ["hash-rec-1", "hash-rec-2"] }),
+      });
+    });
+    global.fetch = fetchSpy as any;
+
+    const action = taskStore.reconcileActiveTransaction("/mock/cwd");
+    await runClientPromise(action);
+
+    expect(activeTxSignal.value?.id).toBe("task-reconciled-999");
+    expect(activeTxSignal.value?.checkpoints).toEqual(["hash-rec-1"]);
+    
+    expect(tasksSignal.value[0]?.status).toBe("completed");
+
+    expect(tasksSignal.value[1]?.status).toBe("completed");
+    expect(fetchSpy).toHaveBeenCalled();
+  });
+
+  it("should clear stale local transaction state when status returns null", async () => {
+    tasksSignal.value = [
+      {
+        id: "stale-task",
+        description: "Some stale task",
+        targetFiles: [],
+        status: "pending" as const,
+      }
+    ];
+    activeTxSignal.value = {
+      id: "stale-tx",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/stale-tx",
+      checkpoints: [],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => null,
+    }) as any;
+
+    const action = taskStore.reconcileActiveTransaction();
+    await runClientPromise(action);
+
     expect(activeTxSignal.value).toBeNull();
     expect(tasksSignal.value.length).toBe(0);
   });
