@@ -34,14 +34,17 @@ export interface WorkspaceController {
   readonly listDirectories: () => Effect.Effect<readonly string[], Error>;
 }
 
-const runCommand = (args: string[], cwd?: string) =>
+const runCommand = (args: string[], cwd?: string, env?: Record<string, string>) =>
   Effect.tryPromise({
     try: () => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
       const [command, ...cmdArgs] = args;
       if (!command) {
         return reject(new Error("No command provided"));
       }
-      const child = spawn(command, cmdArgs, { cwd });
+      const child = spawn(command, cmdArgs, { 
+        cwd,
+        env: { ...process.env, ...env }
+      });
       let stdout = "";
       let stderr = "";
       
@@ -175,7 +178,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         const cmd = ["bun", "run", "test"];
-        const result = yield* runCommand(cmd, cwd);
+        const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" });
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 

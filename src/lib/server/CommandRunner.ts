@@ -193,7 +193,11 @@ export const makeCommandRunner = (): CommandRunner => {
     runTestSuite: (cwd?: string, timeoutMs?: number) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
-        const result = yield* run(["bun", "run", "test"], { cwd, timeoutMs: timeoutMs ?? 45000 });
+        const result = yield* run(["bun", "run", "test"], { 
+          cwd, 
+          timeoutMs: timeoutMs ?? 45000,
+          env: { NODE_ENV: "test" }
+        });
 
         if (result.success) {
           return { success: true, dirtyFiles: [] };

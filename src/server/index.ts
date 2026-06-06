@@ -118,7 +118,7 @@ export const app = new Elysia()
     return "Development Server: Build output is not present in `./dist`. Use the Vite dev server on port 3000.";
   });
 
-if (process.env.NODE_ENV !== "test" && !isMcpMode) {
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST && !isMcpMode) {
   const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
   app.listen(port);
   console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
