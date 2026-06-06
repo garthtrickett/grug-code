@@ -17,10 +17,37 @@ export interface GitTransaction {
   readonly checkpoints: readonly string[];
 }
 
-// Client-side Signals
-export const tasksSignal = signal<readonly PlanTask[]>([]);
-export const isPausedSignal = signal<boolean>(false);
-export const activeTxSignal = signal<GitTransaction | null>(null);
+const getStoredTx = (): GitTransaction | null => {
+  if (typeof localStorage === "undefined") return null;
+  const stored = localStorage.getItem("grug-active-tx");
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as GitTransaction;
+  } catch {
+    return null;
+  }
+};
+
+const getStoredTasks = (): readonly PlanTask[] => {
+  if (typeof localStorage === "undefined") return [];
+  const stored = localStorage.getItem("grug-active-tasks");
+  if (!stored) return [];
+  try {
+    return JSON.parse(stored) as readonly PlanTask[];
+  } catch {
+    return [];
+  }
+};
+
+const getStoredPaused = (): boolean => {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem("grug-active-paused") === "true";
+};
+
+// Client-side Signals (Hydrated from persistent LocalStorage cache)
+export const tasksSignal = signal<readonly PlanTask[]>(getStoredTasks());
+export const isPausedSignal = signal<boolean>(getStoredPaused());
+export const activeTxSignal = signal<GitTransaction | null>(getStoredTx());
 export const errorSignal = signal<string | null>(null);
 export const stepProgressSignal = signal<string>("");
 
@@ -75,6 +102,11 @@ export const taskStore = {
       activeTxSignal.value = null;
       errorSignal.value = null;
       stepProgressSignal.value = "";
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("grug-active-tx");
+        localStorage.removeItem("grug-active-tasks");
+        localStorage.removeItem("grug-active-paused");
+      }
     }),
 
   initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string) =>
@@ -134,6 +166,12 @@ export const taskStore = {
       activeTxSignal.value = tx;
       isPausedSignal.value = false;
 
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tx", JSON.stringify(tx));
+        localStorage.setItem("grug-active-tasks", JSON.stringify(initialTasks));
+        localStorage.setItem("grug-active-paused", "false");
+      }
+
       // Hydrate logical clocks to verify causal flows
       const { hlcStore } = yield* Effect.promise(() => import("./hlcStore"));
       yield* hlcStore.tick();
@@ -153,6 +191,9 @@ export const taskStore = {
       tasksSignal.value = tasksSignal.value.map((t) =>
         t.id === task.id ? { ...t, status: "running" } : t
       );
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
 
       yield* clientLog("info", `[taskStore] Executing step: ${task.description}`);
 
@@ -203,6 +244,9 @@ export const taskStore = {
         tasksSignal.value = tasksSignal.value.map((t) =>
           t.id === task.id ? { ...t, status: "failed" } : t
         );
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+        }
         return yield* Effect.fail(new Error(errObj.error));
       }
 
@@ -216,18 +260,29 @@ export const taskStore = {
         t.id === task.id ? { ...t, status: "completed" } : t
       );
 
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
+
       yield* clientLog("info", `[taskStore] Step successfully executed: ${task.description}`);
     }),
 
   pauseQueue: () =>
     Effect.gen(function* () {
       isPausedSignal.value = true;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-paused", "true");
+      }
       yield* clientLog("info", "[taskStore] Task execution queue PAUSED by developer.");
     }),
 
   resumeQueue: () =>
     Effect.gen(function* () {
       isPausedSignal.value = false;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-paused", "false");
+      }
       yield* clientLog("info", "[taskStore] Task execution queue RESUMED.");
     }),
 
@@ -236,6 +291,9 @@ export const taskStore = {
       tasksSignal.value = tasksSignal.value.map((task) =>
         task.id === taskId ? { ...task, developerNotes: notes } : task
       );
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
       yield* clientLog("debug", `[taskStore] Edited task notes for ${taskId}`);
     }),
 
@@ -280,6 +338,11 @@ export const taskStore = {
         task.status === "completed" ? task : { ...task, status: "pending" }
       );
 
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-active-tx", JSON.stringify(updatedTx));
+        localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
+      }
+
       yield* clientLog("info", `[taskStore] Rollback completed. Checkpoints remaining: ${updatedTx.checkpoints.length}`);
       return updatedTx;
     }),
@@ -315,6 +378,12 @@ export const taskStore = {
       activeTxSignal.value = null;
       isPausedSignal.value = false;
 
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("grug-active-tx");
+        localStorage.removeItem("grug-active-tasks");
+        localStorage.removeItem("grug-active-paused");
+      }
+
       yield* clientLog("info", "[taskStore] Active transaction aborted and local workspace reset.");
     }),
 
@@ -348,6 +417,12 @@ export const taskStore = {
       tasksSignal.value = [];
       activeTxSignal.value = null;
       isPausedSignal.value = false;
+
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("grug-active-tx");
+        localStorage.removeItem("grug-active-tasks");
+        localStorage.removeItem("grug-active-paused");
+      }
 
       yield* clientLog("info", "[taskStore] Active transaction committed and merged successfully.");
     }),
