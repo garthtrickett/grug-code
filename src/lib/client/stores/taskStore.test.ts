@@ -219,6 +219,135 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(suggestedOptionsSignal.value).toEqual(["Implement option A", "Implement option B"]);
   });
 
+  it("should execute steps sequentially and create checkpoints automatically on autoRunQueue success", async () => {
+    const initTx = {
+      id: "task-autopilot-success",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/task-autopilot-success",
+      checkpoints: [],
+    };
+
+    const step1Tx = {
+      ...initTx,
+      checkpoints: ["checkpoint-1"],
+    };
+
+    const step2Tx = {
+      ...initTx,
+      checkpoints: ["checkpoint-1", "checkpoint-2"],
+    };
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => initTx,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => step1Tx,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => step2Tx,
+      }) as any;
+
+    const customSteps = [
+      {
+        id: "step-1",
+        description: "Autopilot step 1",
+        targetFiles: ["src/a.ts"],
+        status: "pending" as const,
+      },
+      {
+        id: "step-2",
+        description: "Autopilot step 2",
+        targetFiles: ["src/b.ts"],
+        status: "pending" as const,
+      }
+    ];
+
+    // Pause queue initially to prevent background autopilot loop race conditions
+    isPausedSignal.value = true;
+
+    await runClientPromise(taskStore.initTaskQueue(
+      "task-autopilot-success",
+      "Test Autopilot",
+      ["src/a.ts", "src/b.ts"],
+      "/mock/cwd",
+      undefined,
+      "openai",
+      customSteps
+    ));
+
+    // Resume autopilot loop manually and wait for its completion
+    isPausedSignal.value = false;
+    await runClientPromise(taskStore.autoRunQueue("/mock/cwd"));
+
+    expect(tasksSignal.value[0]?.status).toBe("completed");
+    expect(tasksSignal.value[1]?.status).toBe("completed");
+    expect(activeTxSignal.value?.checkpoints).toEqual(["checkpoint-1", "checkpoint-2"]);
+  });
+
+  it("should halt sequential autoRunQueue immediately on step execution failure", async () => {
+    const initTx = {
+      id: "task-autopilot-fail",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/task-autopilot-fail",
+      checkpoints: [],
+    };
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => initTx,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "Compilation error TS2322" }),
+      }) as any;
+
+    const customSteps = [
+      {
+        id: "step-1",
+        description: "Autopilot failing step 1",
+        targetFiles: ["src/a.ts"],
+        status: "pending" as const,
+      },
+      {
+        id: "step-2",
+        description: "Autopilot step 2",
+        targetFiles: ["src/b.ts"],
+        status: "pending" as const,
+      }
+    ];
+
+    // Pause queue initially to prevent background autopilot loop race conditions
+    isPausedSignal.value = true;
+
+    await runClientPromise(taskStore.initTaskQueue(
+      "task-autopilot-fail",
+      "Test Autopilot Fail",
+      ["src/a.ts", "src/b.ts"],
+      "/mock/cwd",
+      undefined,
+      "openai",
+      customSteps
+    ));
+
+    // Resume autopilot loop manually and wait for its failure
+    isPausedSignal.value = false;
+    await runClientPromise(taskStore.autoRunQueue("/mock/cwd"));
+
+    expect(tasksSignal.value[0]?.status).toBe("failed");
+    expect(tasksSignal.value[1]?.status).toBe("pending"); // Stays pending, loop halted
+    expect(errorSignal.value).toBe("Compilation error TS2322");
+  });
+
   it("should initialize task queue with custom planned steps when provided", async () => {
     const mockTx = {
       id: "task-002",
@@ -277,6 +406,13 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
   it("should pause and resume queue signals accurately", async () => {
     await runClientPromise(taskStore.pauseQueue());
     expect(isPausedSignal.value).toBe(true);
+
+    // Provide mocked autopilot fetch sequences for the resume trigger loop
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "task-resume" }),
+    }) as any;
 
     await runClientPromise(taskStore.resumeQueue());
     expect(isPausedSignal.value).toBe(false);

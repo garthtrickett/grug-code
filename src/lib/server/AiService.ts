@@ -67,7 +67,15 @@ export const AiServiceLive = Layer.sync(
           // Cross-process testing override for offline headless E2E testing
           if (process.env.VITEST !== "true" && (fs.existsSync(".grug-mock-ai") || process.env.MOCK_AI_RESPONSE === "true")) {
             yield* Effect.logInfo(`[AiService] Intercepting prompt with mock testing response: "${prompt.substring(0, 40)}..."`);
-            if (prompt.includes("LIGHTWEIGHT FLAT REPOSITORY MAP")) {
+                        if (prompt.includes("LIGHTWEIGHT FLAT REPOSITORY MAP")) {
+              const isDiscussionMode = system && system.includes("\"discussion\" mode is enabled");
+              if (isDiscussionMode && !prompt.includes("Proceed with plan")) {
+                return {
+                  status: "discussion",
+                  discussionText: "Grug has analyzed your codebase. Let's discuss Option A vs Option B.",
+                  suggestedOptions: ["Proceed with plan", "Compare details"]
+                } as unknown as T;
+              }
               return {
                 status: "resolved",
                 target_files: ["initial.txt", "main.ts", "worker.ts"],

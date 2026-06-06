@@ -201,8 +201,9 @@ export class GrugTaskBoard extends LitElement {
   };
 
   private handlePauseToggle = () => {
+    const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
     if (isPausedSignal.value) {
-      runClientUnscoped(taskStore.resumeQueue());
+      runClientUnscoped(taskStore.resumeQueue(cwd));
     } else {
       runClientUnscoped(taskStore.pauseQueue());
     }
@@ -715,6 +716,6 @@ export class GrugTaskBoard extends LitElement {
               </div>
             `}
                 </div>
-                    `;
-                    }
+                   `;
+                   }
 }

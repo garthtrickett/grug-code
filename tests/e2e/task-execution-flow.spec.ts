@@ -10,7 +10,7 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
   let tempDir: string;
   let sessionToken: string;
 
-    test.beforeAll(async () => {
+  test.beforeAll(async () => {
     // Read local loopback session token securely
     const fileContent = await fs.readFile(".grug-session.json", "utf-8");
     const sessionData = JSON.parse(fileContent) as { token: string };
@@ -59,26 +59,26 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
     const heading = page.locator("grug-task-board h2");
     await expect(heading).toContainText("Launch Development Session");
 
-            // 4. Fill form inputs to start planning
-        await page.fill("input[name='description']", "E2E custom feature update");
-        await page.click("button[type='submit']");
+    // 4. Fill form inputs to start planning
+    await page.fill("input[name='description']", "E2E custom feature update");
+    await page.click("button[type='submit']");
 
-        // 5. Assert proposal page transition
-        const proposalHeader = page.locator("grug-task-board h2");
-        await expect(proposalHeader).toContainText("Proposed Development Plan");
+    // 5. Assert proposal page transition
+    const proposalHeader = page.locator("grug-task-board h2");
+    await expect(proposalHeader).toContainText("Proposed Development Plan");
 
-        // 6. Click start transaction
-        await page.click("button:has-text('Approve & Start Task Transaction')");
+    // 6. Click start transaction
+    await page.click("button:has-text('Approve & Start Task Transaction')");
 
-        // 7. Assert transition to transaction view
-        const txHeader = page.locator("grug-task-board h2");
-        await expect(txHeader).toContainText("Workspace Transaction:");
+    // 7. Assert transition to transaction view
+    const txHeader = page.locator("grug-task-board h2");
+    await expect(txHeader).toContainText("Workspace Transaction:");
 
-        // 8. Assert step descriptions are visible
-        const firstStep = page.locator("grug-task-board h4").first();
-        await expect(firstStep).toContainText("Analyze codebase targets");
+    // 8. Assert step descriptions are visible
+    const firstStep = page.locator("grug-task-board h4").first();
+    await expect(firstStep).toContainText("Analyze codebase targets");
 
-    // 7. Verify play/pause signal transitions cleanly
+    // 9. Verify play/pause signal transitions cleanly
     const pauseBtn = page.locator("grug-task-board button:has-text('Pause Queue')");
     await expect(pauseBtn).toBeVisible();
 
@@ -86,15 +86,63 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
     const resumeBtn = page.locator("grug-task-board button:has-text('Resume Queue')");
     await expect(resumeBtn).toBeVisible();
 
-    // 8. Trigger Abort Task
+    // 10. Trigger Abort Task
     const abortBtn = page.locator("grug-task-board button:has-text('Abort Task')");
     await abortBtn.click();
 
-    // 9. Verify workspace successfully resets back to task initialization view
+    // 11. Verify workspace successfully resets back to task initialization view
     await expect(heading).toContainText("Launch Development Session");
 
-            // Ensure ephemeral branch was safely deleted on disk
-        const branchList = await execPromise("git branch", { cwd: tempDir });
-        expect(branchList.stdout.includes("grug-task/")).toBe(false);
+    // Ensure ephemeral branch was safely deleted on disk
+    const branchList = await execPromise("git branch", { cwd: tempDir });
+    expect(branchList.stdout.includes("grug-task/")).toBe(false);
+  });
+
+  test("should execute end-to-end task transaction starting in discussion mode and proceeding to auto-pilot execution", async ({ page }) => {
+    // 1. Setup mock environment & authorize page
+    await page.goto("/");
+    await page.evaluate(({ token, cwd }) => {
+      localStorage.setItem("grug-token", token);
+      localStorage.setItem("grug-cwd", cwd);
+      localStorage.setItem("jwt", "mock-auth-jwt");
+    }, { token: sessionToken, cwd: tempDir });
+
+    // 2. Reload to hydrate stores
+    await page.reload();
+
+    // 3. Confirm launch form loaded
+    const heading = page.locator("grug-task-board h2");
+    await expect(heading).toContainText("Launch Development Session");
+
+    // 4. Fill in feature description, check "Discussion Mode", and submit
+    await page.fill("input[name='description']", "E2E interactive discussion feature");
+    await page.check("input[type='checkbox']");
+    await page.click("grug-task-board button[type='submit']");
+
+    // 5. Assert transition to Discussion Board panel
+    const discussionHeader = page.locator("grug-task-board h2");
+    await expect(discussionHeader).toContainText("Grug Code Discussion");
+
+    // 6. Select a suggested response button to finalize conversation
+    await page.click("button:has-text('Proceed with plan')");
+    
+    // 7. Verify transition to proposed planning board checklist
+    const proposalHeader = page.locator("grug-task-board h2");
+    await expect(proposalHeader).toContainText("Proposed Development Plan");
+
+    // 8. Click start transaction
+    await page.click("button:has-text('Approve & Start Task Transaction')");
+
+    // 9. Confirm active transaction screen is displayed
+    const txHeader = page.locator("grug-task-board h2");
+    await expect(txHeader).toContainText("Workspace Transaction:");
+
+    // 10. Clean up transaction cleanly
+    const abortBtn = page.locator("grug-task-board button:has-text('Abort Task')");
+    await expect(abortBtn).toBeVisible();
+    await abortBtn.click();
+
+    // 11. Confirm dashboard reset back to initialization form
+    await expect(heading).toContainText("Launch Development Session");
   });
 });

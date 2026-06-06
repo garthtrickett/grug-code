@@ -427,4 +427,47 @@ export function hello(name: string): string {
       delete process.env.MOCK_TEST_FAIL;
     }
   });
+
+  it("should safely accept POST /research requests with mode 'discussion' and conversation history arrays", async () => {
+    const token = getActiveToken();
+
+    // Mock AI service to return discussion state when called
+    mockGenerateStructuredObject.mockReturnValue(
+      Effect.succeed({
+        status: "discussion",
+        discussionText: "Grug has analyzed your codebase. Let's discuss Option A vs Option B.",
+        suggestedOptions: ["Compare Option A and B", "Go straight to Option A"]
+      })
+    );
+
+    const response = await app.handle(
+      new Request("http://localhost/api/workspace/research", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          userPrompt: "Analyze project layout",
+          cwd: tempDir,
+          provider: "openai",
+          mode: "discussion",
+          history: [
+            { role: "user", text: "Please explore workspace" },
+            { role: "assistant", text: "Grug studying project" }
+          ]
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const result = await response.json() as {
+      status: string;
+      discussionText: string;
+      suggestedOptions: string[];
+    };
+    expect(result.status).toBe("discussion");
+    expect(result.discussionText).toBe("Grug has analyzed your codebase. Let's discuss Option A vs Option B.");
+    expect(result.suggestedOptions).toEqual(["Compare Option A and B", "Go straight to Option A"]);
+  });
 });

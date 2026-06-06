@@ -39,6 +39,11 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   let proposedFilesSignal: any;
   let proposedTasksSignal: any;
 
+  let discussionHistorySignal: any;
+  let discussionTextSignal: any;
+  let suggestedOptionsSignal: any;
+  let isDiscussingSignal: any;
+
   beforeAll(async () => {
     // Dynamic import to prevent hoisting of Lit before JSDOM polyfills are bound
     const storeMod = await import("../lib/client/stores/taskStore");
@@ -50,6 +55,10 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     isPlanningSignal = storeMod.isPlanningSignal;
     proposedFilesSignal = storeMod.proposedFilesSignal;
     proposedTasksSignal = storeMod.proposedTasksSignal;
+    discussionHistorySignal = storeMod.discussionHistorySignal;
+    discussionTextSignal = storeMod.discussionTextSignal;
+    suggestedOptionsSignal = storeMod.suggestedOptionsSignal;
+    isDiscussingSignal = storeMod.isDiscussingSignal;
 
     const runtimeMod = await import("../lib/client/runtime");
     runClientPromise = runtimeMod.runClientPromise;
@@ -178,6 +187,36 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     proposedTasksSignal.value = [];
   });
 
+  it("should render discussion board elements when isDiscussingSignal is active", async () => {
+    isDiscussingSignal.value = true;
+    discussionTextSignal.value = "Grug is thinking.";
+    suggestedOptionsSignal.value = ["Option X", "Option Y"];
+    discussionHistorySignal.value = [
+      { role: "user", text: "Hello Grug" },
+      { role: "assistant", text: "Hello User" }
+    ];
+
+    await element.updateComplete;
+    await tick();
+
+    const discussionHeader = element.querySelector("h2") as any;
+    expect(discussionHeader?.textContent || "").toContain("Grug Code Discussion");
+
+    const historyTexts = Array.from(element.querySelectorAll("p")).map((p: any) => p.textContent || "");
+    expect(historyTexts.some(t => t.includes("Hello Grug"))).toBe(true);
+    expect(historyTexts.some(t => t.includes("Grug is thinking."))).toBe(true);
+
+    const buttons = Array.from(element.querySelectorAll("button")).map((b: any) => b.textContent?.trim() || "");
+    expect(buttons).toContain("Option X");
+    expect(buttons).toContain("Option Y");
+
+    // Clean up
+    isDiscussingSignal.value = false;
+    discussionTextSignal.value = "";
+    suggestedOptionsSignal.value = [];
+    discussionHistorySignal.value = [];
+  });
+
   afterEach(() => {
     if (element) {
       element.remove();
@@ -196,8 +235,8 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   });
 
   it("should render the directory scope dropdown when activeTxSignal is null", async () => {
-    const dirMod = await import("../lib/client/stores/directoryStore");
-    dirMod.directoriesSignal.value = ["apps/web", "packages/core"];
+    const dMod = await import("../lib/client/stores/directoryStore");
+    dMod.directoriesSignal.value = ["apps/web", "packages/core"];
 
     await element.updateComplete;
     await tick();
