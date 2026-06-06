@@ -37,7 +37,11 @@ if (isMcpMode) {
   });
 }
 
-export const app = new Elysia()
+export const app = new Elysia({
+  serve: {
+    idleTimeout: 255, // Set Bun/Elysia idle timeout to maximum to prevent dropped connections on slow LLM calls
+  }
+})
   .onError(({ code, error, request }) => {
     console.error(`[Global Error] ${request.method} ${request.url} - ${code}`, error);
   })
