@@ -57,7 +57,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(document.querySelector('meta[name="grug-session-token"]')).toBeNull();
   });
 
-  it("should set up a task queue and branch checkouts programmatically on initTaskQueue", async () => {
+    it("should set up a task queue and branch checkouts programmatically on initTaskQueue", async () => {
     const mockTx = {
       id: "task-001",
       baseBranch: "main",
@@ -73,12 +73,15 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
 
     const initialHlcValue = hlcSignal.peek().physical;
 
+    // Pause queue initially to prevent background autopilot run during initialization assertion
+    isPausedSignal.value = true;
+
     const action = taskStore.initTaskQueue("task-001", "Create popup component", ["src/components/Popup.ts"]);
     const txResult = await runClientPromise(action);
 
     expect(txResult).toEqual(mockTx);
     expect(activeTxSignal.value).toEqual(mockTx);
-    expect(isPausedSignal.value).toBe(false);
+    expect(isPausedSignal.value).toBe(true);
     expect(tasksSignal.value.length).toBe(3); // analysis, patch, verification
     expect(tasksSignal.value[0]?.status).toBe("completed");
     expect(tasksSignal.value[1]?.status).toBe("pending");
@@ -348,7 +351,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(errorSignal.value).toBe("Compilation error TS2322");
   });
 
-  it("should initialize task queue with custom planned steps when provided", async () => {
+    it("should initialize task queue with custom planned steps when provided", async () => { 
     const mockTx = {
       id: "task-002",
       baseBranch: "main",
@@ -370,6 +373,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
         status: "pending" as const,
       }
     ];
+
+    // Pause queue initially to prevent background autopilot run during assertion
+    isPausedSignal.value = true;
 
     const action = taskStore.initTaskQueue(
       "task-002",
@@ -417,7 +423,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(isPausedSignal.value).toBe(false);
   });
 
-  it("should permit developers to edit individual task notes dynamically", async () => {
+    it("should permit developers to edit individual task notes dynamically", async () => {
     const mockTx = {
       id: "task-edit-notes",
       baseBranch: "main",
@@ -430,6 +436,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       json: async () => mockTx,
     }) as any;
 
+    // Pause queue to prevent background run during notes edit assertion
+    isPausedSignal.value = true;
+
     await runClientPromise(taskStore.initTaskQueue("task-edit-notes", "Edit notes test", ["src/edit.ts"]));
     const targetTaskId = tasksSignal.value[0]?.id;
     expect(targetTaskId).toBeDefined();
@@ -440,7 +449,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     }
   });
 
-  it("should support rolling back checkpoints and resetting pending status keys", async () => {
+    it("should support rolling back checkpoints and resetting pending status keys", async () => {
     const initTx = {
       id: "task-rb",
       baseBranch: "main",
@@ -466,6 +475,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
         json: async () => rolledBackTx,
       }) as any;
 
+    // Pause queue initially to prevent background autopilot run during testing
+    isPausedSignal.value = true;
+
     await runClientPromise(taskStore.initTaskQueue("task-rb", "Rollback spec", ["src/rb.ts"]));
     expect(activeTxSignal.value?.checkpoints.length).toBe(2);
 
@@ -476,7 +488,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(activeTxSignal.value?.checkpoints.length).toBe(1);
   });
 
-  it("should support aborting active task and clearing out signals", async () => {
+    it("should support aborting active task and clearing out signals", async () => {
     const mockTx = {
       id: "task-abort",
       baseBranch: "main",
@@ -494,6 +506,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
         status: 200,
         json: async () => ({ success: true }),
       }) as any;
+
+    // Pause queue initially to prevent background autopilot run during testing
+    isPausedSignal.value = true;
 
     await runClientPromise(taskStore.initTaskQueue("task-abort", "Abort check", ["src/abort.ts"]));
     expect(activeTxSignal.value).not.toBeNull();

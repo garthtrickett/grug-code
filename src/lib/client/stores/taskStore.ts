@@ -173,7 +173,7 @@ export const taskStore = {
         const hasPending = state.tasks.some((t) => t.status === "pending");
         if (!isPausedSignal.value && hasPending) {
           yield* clientLog("info", "[taskStore] Active pending tasks found during reconciliation. Resuming autopilot runner...");
-          yield* Effect.fork(taskStore.autoRunQueue(cwd));
+          yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
         }
       } else {
         yield* clientLog("info", "[taskStore] No active transaction found on server. Clearing any stale local storage states.");
@@ -334,9 +334,8 @@ export const taskStore = {
         catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
       });
 
-      tasksSignal.value = initialTasks;
+            tasksSignal.value = initialTasks;
       activeTxSignal.value = tx;
-      isPausedSignal.value = false;
       isPlanningSignal.value = false;
       proposedFilesSignal.value = [];
       proposedTasksSignal.value = [];
@@ -344,7 +343,7 @@ export const taskStore = {
       if (typeof localStorage !== "undefined") {
         localStorage.setItem("grug-active-tx", JSON.stringify(tx));
         localStorage.setItem("grug-active-tasks", JSON.stringify(initialTasks));
-        localStorage.setItem("grug-active-paused", "false");
+        localStorage.setItem("grug-active-paused", isPausedSignal.value ? "true" : "false");
       }
 
       const { hlcStore } = yield* Effect.promise(() => import("./hlcStore"));
@@ -352,7 +351,9 @@ export const taskStore = {
 
       yield* clientLog("info", `[taskStore] Task queue initialized. Ephemeral branch: ${tx.ephemeralBranch}`);
       
-      yield* Effect.fork(taskStore.autoRunQueue(cwd));
+      if (!isPausedSignal.value) {
+        yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
+      }
 
       return tx;
     }),
@@ -392,7 +393,7 @@ export const taskStore = {
           } catch {
             // Ignore temporary polling network drops
           }
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 5));
         }
       };
       if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
@@ -504,7 +505,7 @@ export const taskStore = {
       }
       yield* clientLog("info", "[taskStore] Task execution queue RESUMED.");
       
-      yield* Effect.fork(taskStore.autoRunQueue(cwd));
+      yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
     }),
 
   editTaskNotes: (taskId: string, notes: string) =>
