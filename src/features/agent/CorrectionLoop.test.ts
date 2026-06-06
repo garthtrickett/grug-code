@@ -77,10 +77,10 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
 
     const result = await Effect.runPromise(program);
     expect(result).toEqual(dummyTx);
-    expect(mockApplyPatch).toHaveBeenCalledTimes(1);
+        expect(mockApplyPatch).toHaveBeenCalledTimes(1);
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(1);
     expect(mockRunTestSuite).toHaveBeenCalledTimes(1);
-    expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 0");
+    expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 0", undefined);
   });
 
   it("should self-heal compilation failure on first attempt and succeed on second attempt", async () => {
@@ -142,10 +142,10 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     expect(mockApplyPatch).toHaveBeenCalledTimes(2); // Initial patch + 1 corrective patch
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(2);
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(1);
-    expect(mockGenerateStructuredObject).toHaveBeenCalledWith(
+        expect(mockGenerateStructuredObject).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "openai" })
     );
-    expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 1");
+    expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 1", undefined);
   });
 
   it("should fail and raise SelfCorrectionError when three consecutive compilation failures occur", async () => {
@@ -249,9 +249,9 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     // Verify execution steps
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(3);
     expect(mockRunTestSuite).toHaveBeenCalledTimes(2);
-    expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(2);
+        expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(2);
     expect(mockApplyPatch).toHaveBeenCalledTimes(3); // Initial patch + 1 test-correction patch + 1 compile-correction patch
-    expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 2");
+    expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 2", undefined);
   });
 
   it("should preserve original stable state and halt safely when aggregate correction threshold is exhausted during the test phase", async () => {

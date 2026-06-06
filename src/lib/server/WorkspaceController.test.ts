@@ -13,15 +13,16 @@ describe("WorkspaceController - Git Transaction Core", () => {
 
   beforeEach(async () => {
     tempDir = path.join(process.cwd(), `.grug-temp-test-${crypto.randomUUID()}`);
-    await fs.mkdir(tempDir, { recursive: true });
+        await fs.mkdir(tempDir, { recursive: true });
 
     await execPromise("git init", { cwd: tempDir });
     await execPromise("git config user.name 'Grug Test'", { cwd: tempDir });
     await execPromise("git config user.email 'grug@test.com'", { cwd: tempDir });
     await execPromise("git config commit.gpgSign false", { cwd: tempDir });
 
+    await fs.writeFile(path.join(tempDir, ".gitignore"), ".grug-active-transaction.json\n");
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Grug initialize codebase.\n");
-    await execPromise("git add initial.txt", { cwd: tempDir });
+    await execPromise("git add .", { cwd: tempDir });
     await execPromise("git commit -m 'initial commit'", { cwd: tempDir });
   });
 

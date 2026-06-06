@@ -34,7 +34,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .get("/progress", () => {
     return { progress: "Grug working hard..." };
   })
-  .get("/status", async ({ query, runEffect, set }) => {
+    .get("/status", async ({ query, runEffect, set }) => {
     const controller = makeWorkspaceController(query.cwd);
     const effect = controller.readTransactionState();
     const res = await runEffect(Effect.either(effect));
@@ -42,7 +42,9 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       set.status = 400;
       return { error: (res.left).message };
     }
-    return res.right;
+    return new Response(JSON.stringify(res.right), {
+      headers: { "Content-Type": "application/json" }
+    });
   }, {
     query: t.Object({
       cwd: t.Optional(t.String())

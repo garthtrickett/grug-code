@@ -10,6 +10,7 @@ signing_key.jks
 
 # --- Local Config & Temporary Files ---
 current_response.json
+.grug-active-transaction.json
 a.txt
 context_testing.txt
 test_results.txt

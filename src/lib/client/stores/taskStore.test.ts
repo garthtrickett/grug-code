@@ -570,10 +570,16 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     const action = taskStore.reconcileActiveTransaction("/mock/cwd");
     await runClientPromise(action);
 
-    expect(activeTxSignal.value?.id).toBe("task-reconciled-999");
+        expect(activeTxSignal.value?.id).toBe("task-reconciled-999");
     expect(activeTxSignal.value?.checkpoints).toEqual(["hash-rec-1"]);
     
     expect(tasksSignal.value[0]?.status).toBe("completed");
+
+    // Wait for the background queue to complete
+    for (let i = 0; i < 20; i++) {
+      if (tasksSignal.value[1]?.status === "completed") break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
 
     expect(tasksSignal.value[1]?.status).toBe("completed");
     expect(fetchSpy).toHaveBeenCalled();
