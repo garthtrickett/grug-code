@@ -37,13 +37,13 @@ export const CorrectionLoopLive = Layer.effect(
     const ai = yield* AiService;
 
     return {
-      runStep: ({ tx, instructions, cwd }) =>
+      runStep: ({ tx, targetFiles, instructions, cwd }) =>
         Effect.gen(function* () {
           yield* Effect.logInfo(`[CorrectionLoop] Starting Stage 2 Self-Correction Loop for transaction: ${tx.id}`);
 
           const controller = makeWorkspaceController(cwd);
 
-                    let patchToApply = instructions;
+          let patchToApply = instructions;
 
           const isJson = (str: string): boolean => {
             try {
@@ -62,7 +62,7 @@ export const CorrectionLoopLive = Layer.effect(
               const filePath = cwd ? path.resolve(cwd, file) : path.resolve(file);
               const exists = yield* Effect.tryPromise({
                 try: () => fs.stat(filePath).then(() => true).catch(() => false),
-                catch: () => false,
+                catch: (e) => new SelfCorrectionError({ message: `Failed to check file stat: ${String(e)}` }),
               });
 
               let fileContent = "";
