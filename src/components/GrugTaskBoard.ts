@@ -13,6 +13,10 @@ import {
   activeTxSignal,
   errorSignal,
   stepProgressSignal,
+  isResearchingSignal,
+  isPlanningSignal,
+  proposedFilesSignal,
+  proposedTasksSignal,
   type PlanTask,
 } from "../lib/client/stores/taskStore";
 import {
@@ -26,9 +30,19 @@ import {
 export class GrugTaskBoard extends LitElement {
   private _disposeEffect?: () => void;
   private _selectService: ReturnType<typeof createDirectorySelectMachine> | null = null;
+  private _checkedFiles = new Set<string>();
+  private _description = "";
+  private _provider: "gemini" | "openai" | "deepseek" = "gemini";
 
   protected override createRenderRoot() {
     return this; // Render in Light DOM to inherit Tailwind styles
+  }
+
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "");
   }
 
   override connectedCallback() {
@@ -46,6 +60,18 @@ export class GrugTaskBoard extends LitElement {
       void stepProgressSignal.value;
       void directoriesSignal.value;
       void selectedScopeSignal.value;
+      void isResearchingSignal.value;
+      void isPlanningSignal.value;
+      void proposedFilesSignal.value;
+      void proposedTasksSignal.value;
+
+      const files = proposedFilesSignal.value;
+      if (isPlanningSignal.value && this._checkedFiles.size === 0) {
+        files.forEach((f) => this._checkedFiles.add(f));
+      } else if (!isPlanningSignal.value) {
+        this._checkedFiles.clear();
+      }
+
       this.requestUpdate();
     });
   }
@@ -63,25 +89,59 @@ export class GrugTaskBoard extends LitElement {
     return String(err);
   }
 
-  private handleInitSubmit = (e: Event) => {
+    private handleInitSubmit = (e: Event) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
-    const taskId = (form.elements.namedItem("taskId") as HTMLInputElement).value;
-    const description = (form.elements.namedItem("description") as HTMLInputElement).value;
-    const targetFilesRaw = (form.elements.namedItem("targetFiles") as HTMLInputElement).value;
-    const targetFiles = targetFilesRaw.split(",").map((f) => f.trim()).filter(Boolean);
-        const provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai" | "deepseek";
+    this._description = (form.elements.namedItem("description") as HTMLInputElement).value;
+    this._provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai" | "deepseek";
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
 
     runClientUnscoped(
       Effect.gen(function* () {
-        yield* taskStore.initTaskQueue(taskId, description, targetFiles, cwd, selectedScopeSignal.value, provider);
+        yield* taskStore.researchFeature(this._description, cwd, selectedScopeSignal.value, this._provider);
       }).pipe(
         Effect.catchAll((err) =>
-          clientLog("error", `[GrugTaskBoard] Failed to start task queue: ${this.getErrorMessage(err)}`)
+          clientLog("error", `[GrugTaskBoard] Failed to research feature: ${this.getErrorMessage(err)}`)
         )
       )
     );
+  };
+
+  private handleToggleFile(file: string) {
+    if (this._checkedFiles.has(file)) {
+      this._checkedFiles.delete(file);
+    } else {
+      this._checkedFiles.add(file);
+    }
+    this.requestUpdate();
+  }
+
+  private handleConfirmProposal = () => {
+    const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
+    const selectedFiles = Array.from(this._checkedFiles);
+    const taskId = `${this.slugify(this._description.substring(0, 30))}-${crypto.randomUUID().slice(0, 8)}`;
+
+    runClientUnscoped(
+      Effect.gen(function* () {
+        yield* taskStore.initTaskQueue(
+          taskId,
+          this._description,
+          selectedFiles,
+          cwd,
+          selectedScopeSignal.value,
+          this._provider,
+          proposedTasksSignal.value
+        );
+      }).pipe(
+        Effect.catchAll((err) =>
+          clientLog("error", `[GrugTaskBoard] Failed to start transaction: ${this.getErrorMessage(err)}`)
+        )
+      )
+    );
+  };
+
+  private handleCancelProposal = () => {
+    runClientUnscoped(taskStore.clear());
   };
 
   private handleEditNotes = (taskId: string, e: Event) => {
@@ -256,11 +316,13 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-  override render() {
+    override render() { 
     const tx = activeTxSignal.value;
     const error = errorSignal.value;
     const tasks = tasksSignal.value;
     const isPaused = isPausedSignal.value;
+    const isResearching = isResearchingSignal.value;
+    const isPlanning = isPlanningSignal.value;
 
     return html`
       <div class="max-w-4xl mx-auto space-y-6">
@@ -274,79 +336,136 @@ export class GrugTaskBoard extends LitElement {
           : ""}
 
         ${tx === null
-          ? html`
-              <!-- Task Initialization Form -->
-              <div class="bg-zinc-950 border border-zinc-800 p-8 rounded-lg shadow-md space-y-6">
-                <div class="space-y-2 text-center">
-                  <h2 class="text-xl font-bold text-white tracking-tight">Launch Development Session</h2>
-                  <p class="text-sm text-zinc-400">Initialize a transactional workspace environment to begin coding feature updates.</p>
+          ? isResearching
+            ? html`
+                <!-- Researching Loading Indicator -->
+                <div class="bg-zinc-950 border border-zinc-800 p-8 rounded-lg shadow-md space-y-6 text-center animate-pulse">
+                  <div class="space-y-3">
+                    <div class="text-4xl">🔍</div>
+                    <h2 class="text-xl font-bold text-white tracking-tight">Grug studying codebase...</h2>
+                    <p class="text-sm text-zinc-400">Scanning repository files, analyzing dependency graphs, and building implementation plan.</p>
+                  </div>
+                  <div class="max-w-md mx-auto bg-zinc-900 h-2 rounded-full overflow-hidden">
+                    <div class="bg-zinc-100 h-full w-2/3 rounded-full animate-pulse"></div>
+                  </div>
                 </div>
-
-                <form @submit=${this.handleInitSubmit} class="space-y-4">
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                      <label for="taskId" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Task ID</label>
-                      <input 
-                        id="taskId" 
-                        name="taskId" 
-                        type="text" 
-                        required 
-                        placeholder="e.g. payment-reconciliation-bug" 
-                        class="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-600 text-sm font-mono"
-                      />
+              `
+            : isPlanning
+              ? html`
+                  <!-- Proposed Plan / Confirmation Board -->
+                  <div class="bg-zinc-950 border border-zinc-800 p-8 rounded-lg shadow-md space-y-6">
+                    <div class="space-y-2 text-center">
+                      <h2 class="text-xl font-bold text-white tracking-tight">Proposed Development Plan</h2>
+                      <p class="text-sm text-zinc-400">Grug studied repository targets and drafted an implementation sequence.</p>
                     </div>
-                    <div class="space-y-1">
-                      <label for="targetFiles" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Target Files (Comma Separated)</label>
-                      <input 
-                        id="targetFiles" 
-                        name="targetFiles" 
-                        type="text" 
-                        required 
-                        placeholder="e.g. src/db/client.ts, src/server/index.ts" 
-                        class="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-600 text-sm font-mono"
-                      />
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <!-- Target Files checklist -->
+                      <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Target Files Selection</h3>
+                        <div class="border border-zinc-800 bg-zinc-900/50 rounded-lg p-4 space-y-2 max-h-80 overflow-y-auto">
+                          ${proposedFilesSignal.value.length === 0
+                            ? html`<p class="text-xs text-zinc-400 italic">No candidate files identified.</p>`
+                            : proposedFilesSignal.value.map((file) => {
+                                const isChecked = this._checkedFiles.has(file);
+                                return html`
+                                  <label class="flex items-center gap-3 cursor-pointer text-sm text-zinc-200 hover:text-white transition-colors py-1">
+                                    <input
+                                      type="checkbox"
+                                      .checked=${isChecked}
+                                      @change=${() => this.handleToggleFile(file)}
+                                      class="rounded bg-zinc-900 border-zinc-800 text-zinc-100 focus:ring-0 focus:ring-offset-0 h-4 w-4"
+                                    />
+                                    <span class="font-mono text-xs break-all">${file}</span>
+                                  </label>
+                                `;
+                              })}
+                        </div>
+                      </div>
+
+                      <!-- Custom planned steps checklist preview -->
+                      <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Proposed Implementation Steps</h3>
+                        <div class="border border-zinc-800 bg-zinc-900/50 rounded-lg p-4 space-y-3 max-h-80 overflow-y-auto">
+                          ${proposedTasksSignal.value.length === 0
+                            ? html`<p class="text-xs text-zinc-400 italic">No custom tasks mapped by AI.</p>`
+                            : proposedTasksSignal.value.map((task, index) => html`
+                                <div class="flex items-start gap-3 text-xs">
+                                  <span class="bg-zinc-800 text-zinc-400 h-5 w-5 rounded-full flex items-center justify-center font-bold shrink-0">${index + 1}</span>
+                                  <div class="space-y-0.5">
+                                    <h4 class="font-medium text-white">${task.description}</h4>
+                                    <p class="text-zinc-500 font-mono text-[10px]">Targets: ${task.targetFiles.join(", ") || "none"}</p>
+                                  </div>
+                                </div>
+                              `)}
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <!-- Zag.js Workspace Directory Scoping -->
-                  ${this.renderSelect()}
-
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                      <label for="provider" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">AI Model Provider</label>
-                      <select 
-                        id="provider" 
-                        name="provider" 
-                        class="w-full px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm cursor-pointer"
+                    <div class="flex items-center gap-4 pt-4 border-t border-zinc-900">
+                      <button
+                        @click=${this.handleConfirmProposal}
+                        class="flex-1 py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer"
                       >
-                        <option value="gemini">Google Gemini (Default)</option>
-                        <option value="openai">OpenAI (GPT-4o)</option>
-                        <option value="deepseek">Deepseek V4 flash</option>
-                      </select>
-                    </div>
-
-                    <div class="space-y-1">
-                      <label for="description" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Feature Description</label>
-                      <input 
-                        id="description" 
-                        name="description" 
-                        type="text" 
-                        required 
-                        placeholder="e.g. Fix memory leak inside Postgres client pooling during heavy load scenarios" 
-                        class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
-                      />
+                        Approve & Start Task Transaction
+                      </button>
+                      <button
+                        @click=${this.handleCancelProposal}
+                        class="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
+                `
+              : html`
+                  <!-- Task Initialization Form -->
+                  <div class="bg-zinc-950 border border-zinc-800 p-8 rounded-lg shadow-md space-y-6">
+                    <div class="space-y-2 text-center">
+                      <h2 class="text-xl font-bold text-white tracking-tight">Launch Development Session</h2>
+                      <p class="text-sm text-zinc-400">Initialize a transactional workspace environment to begin coding feature updates.</p>
+                    </div>
 
-                  <button 
-                    type="submit" 
-                    class="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer"
-                  >
-                    Start Task Transaction
-                  </button>
-                </form>
-              </div>
-            `
+                    <form @submit=${this.handleInitSubmit} class="space-y-4">
+                      <!-- Zag.js Workspace Directory Scoping -->
+                      ${this.renderSelect()}
+
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                          <label for="provider" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">AI Model Provider</label>
+                          <select 
+                            id="provider" 
+                            name="provider" 
+                            class="w-full px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm cursor-pointer"
+                          >
+                            <option value="gemini">Google Gemini (Default)</option>
+                            <option value="openai">OpenAI (GPT-4o)</option>
+                            <option value="deepseek">Deepseek V4 flash</option>
+                          </select>
+                        </div>
+
+                        <div class="space-y-1">
+                          <label for="description" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Feature Description</label>
+                          <input 
+                            id="description" 
+                            name="description" 
+                            type="text" 
+                            required 
+                            placeholder="e.g. Fix memory leak inside Postgres client pooling during heavy load scenarios" 
+                            class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        type="submit" 
+                        class="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer"
+                      >
+                        Analyze Feature & Auto-Target
+                      </button>
+                    </form>
+                  </div>
+                `
           : html`
               <!-- Active Plan Queue & Checklist -->
               <div class="bg-zinc-950 border border-zinc-800 p-6 rounded-lg shadow-md space-y-6">

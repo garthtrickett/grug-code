@@ -34,6 +34,11 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   let activeTxSignal: any;
   let runClientPromise: any;
 
+    let isResearchingSignal: any;
+  let isPlanningSignal: any;
+  let proposedFilesSignal: any;
+  let proposedTasksSignal: any;
+
   beforeAll(async () => {
     // Dynamic import to prevent hoisting of Lit before JSDOM polyfills are bound
     const storeMod = await import("../lib/client/stores/taskStore");
@@ -41,6 +46,10 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     tasksSignal = storeMod.tasksSignal;
     isPausedSignal = storeMod.isPausedSignal;
     activeTxSignal = storeMod.activeTxSignal;
+    isResearchingSignal = storeMod.isResearchingSignal;
+    isPlanningSignal = storeMod.isPlanningSignal;
+    proposedFilesSignal = storeMod.proposedFilesSignal;
+    proposedTasksSignal = storeMod.proposedTasksSignal;
 
     const runtimeMod = await import("../lib/client/runtime");
     runClientPromise = runtimeMod.runClientPromise;
@@ -55,7 +64,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await tick();
   });
 
-  it("should render the AI provider select dropdown inside launch form", async () => {
+    it("should render the AI provider select dropdown inside launch form", async () => {
     await element.updateComplete;
     await tick();
 
@@ -70,6 +79,103 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     providerSelect.value = "openai";
     providerSelect.dispatchEvent(new Event("change"));
     expect(providerSelect.value).toBe("openai");
+  });
+
+  it("should no longer present targetFiles input text field inside launch form", async () => {
+    await element.updateComplete;
+    await tick();
+
+    const targetFilesInput = element.querySelector("input[name='targetFiles']");
+    expect(targetFilesInput).toBeNull();
+  });
+
+  it("should display loading study panel when isResearchingSignal is active", async () => {
+    isResearchingSignal.value = true;
+    await element.updateComplete;
+    await tick();
+
+    const studyHeader = element.querySelector("h2") as any;
+    expect(studyHeader?.textContent || "").toContain("Grug studying codebase");
+
+    // Restore state
+    isResearchingSignal.value = false;
+  });
+
+  it("should display target file checkboxes and steps when isPlanningSignal is active", async () => {
+    isPlanningSignal.value = true;
+    proposedFilesSignal.value = ["src/a.ts", "src/b.ts"];
+    proposedTasksSignal.value = [
+      {
+        id: "task-proposed-1",
+        description: "Perform a study step",
+        targetFiles: ["src/a.ts"],
+        status: "pending",
+      }
+    ];
+
+    await element.updateComplete;
+    await tick();
+
+    const proposedHeader = element.querySelector("h2") as any;
+    expect(proposedHeader?.textContent || "").toContain("Proposed Development Plan");
+
+    const checkboxes = Array.from(element.querySelectorAll("input[type='checkbox']")) as HTMLInputElement[];
+    expect(checkboxes.length).toBe(2);
+
+    const stepDescription = element.querySelector("h4") as any;
+    expect(stepDescription?.textContent || "").toContain("Perform a study step");
+
+    // Click a file checklist checkbox and assert toggle
+    expect(checkboxes[0]?.checked).toBe(true);
+    checkboxes[0]?.click();
+    expect(checkboxes[0]?.checked).toBe(false);
+
+    // Clean up
+    isPlanningSignal.value = false;
+    proposedFilesSignal.value = [];
+    proposedTasksSignal.value = [];
+  });
+
+  it("should trigger initTaskQueue with modified file selections and custom steps on click approve", async () => {
+    isPlanningSignal.value = true;
+    proposedFilesSignal.value = ["src/a.ts", "src/b.ts"];
+    proposedTasksSignal.value = [
+      {
+        id: "task-proposed-1",
+        description: "Planned Step",
+        targetFiles: ["src/a.ts"],
+        status: "pending",
+      }
+    ];
+
+    await element.updateComplete;
+    await tick();
+
+    const checkboxes = Array.from(element.querySelectorAll("input[type='checkbox']")) as HTMLInputElement[];
+    checkboxes[1]?.click(); // Uncheck 'src/b.ts'
+
+    const approveSpy = vi.spyOn(taskStore, "initTaskQueue");
+
+    const approveBtn = Array.from(element.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Approve & Start Task Transaction"
+    ) as HTMLButtonElement;
+    
+    expect(approveBtn).toBeDefined();
+    approveBtn?.click();
+
+    expect(approveSpy).toHaveBeenCalledWith(
+      expect.stringContaining("-"),
+      expect.any(String),
+      ["src/a.ts"],
+      expect.anything(),
+      expect.anything(),
+      expect.any(String),
+      proposedTasksSignal.value
+    );
+
+    isPlanningSignal.value = false;
+    proposedFilesSignal.value = [];
+    proposedTasksSignal.value = [];
   });
 
   afterEach(() => {
