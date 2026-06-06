@@ -16,13 +16,15 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
   let callCount = 0;
+  let capturedProviders: any[] = [];
 
   const mockAiService = (responses: any[]) =>
     Layer.succeed(
       AiService,
       AiService.of({
-        generateStructuredObject: () =>
+        generateStructuredObject: (options: any) =>
           Effect.sync(() => {
+            capturedProviders.push(options.provider);
             const res = responses[callCount];
             if (res) {
               callCount++;
@@ -37,6 +39,7 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
 
   beforeEach(() => {
     callCount = 0;
+    capturedProviders = [];
     vi.clearAllMocks();
   });
 
@@ -89,6 +92,7 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
       loop.run({
         userPrompt: "Adjust processing values",
         projectStructure: JSON.stringify(["src/services/payment.ts"]),
+        provider: "openai",
       })
     ).pipe(
       Effect.provide(ResearchLoopLive),
@@ -102,6 +106,7 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
     expect(result.plan.length).toBe(1);
     expect(result.plan[0]?.id).toBe("step-1");
     expect(callCount).toBe(2);
+    expect(capturedProviders).toEqual(["openai", "openai"]);
 
     expect(fs.stat).toHaveBeenCalled();
     expect(fs.readFile).toHaveBeenCalled();
@@ -128,6 +133,7 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
       loop.run({
         userPrompt: "Find dependency definition structures",
         projectStructure: JSON.stringify(["src/services/dummy.ts"]),
+        provider: "openai",
       })
     ).pipe(
       Effect.provide(ResearchLoopLive),

@@ -15,6 +15,7 @@ export interface GitTransaction {
   readonly baseBranch: string;
   readonly ephemeralBranch: string;
   readonly checkpoints: readonly string[];
+  readonly provider?: "gemini" | "openai";
 }
 
 const getStoredTx = (): GitTransaction | null => {
@@ -109,7 +110,7 @@ export const taskStore = {
       }
     }),
 
-  initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string) =>
+  initTaskQueue: (taskId: string, description: string, targetFiles: readonly string[], cwd?: string, selectedScope?: string, provider?: "gemini" | "openai") =>
     Effect.gen(function* () {
       errorSignal.value = null;
       yield* clientLog("info", `[taskStore] Initializing task queue for transaction: ${taskId}`);
@@ -121,7 +122,7 @@ export const taskStore = {
           fetch("/api/workspace/init", {
             method: "POST",
             headers: getHeaders(),
-            body: JSON.stringify({ taskId, cwd: requestCwd }),
+            body: JSON.stringify({ taskId, cwd: requestCwd, provider }),
           }),
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });

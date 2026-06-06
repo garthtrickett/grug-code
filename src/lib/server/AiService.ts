@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { generateObject, streamText, type StreamTextResult } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { config } from "./Config.ts";
 import { z } from "zod";
 import { Data } from "effect";
@@ -13,6 +14,7 @@ export class AIInferenceError extends Data.TaggedError("AIInferenceError")<{
 
 export interface IAiService {
   readonly generateStructuredObject: <T>(options: {
+    readonly provider?: "gemini" | "openai";
     readonly modelName?: string;
     readonly system?: string;
     readonly prompt: string;
@@ -20,6 +22,7 @@ export interface IAiService {
   }) => Effect.Effect<T, AIInferenceError>;
 
   readonly streamText: (options: {
+    readonly provider?: "gemini" | "openai";
     readonly modelName?: string;
     readonly system?: string;
     readonly prompt: string;
@@ -35,17 +38,21 @@ export class AiService extends Context.Tag("AiService")<
 export const AiServiceLive = Layer.sync(
   AiService,
   () => {
-    const apiKey = config.gemini.apiKey;
-    const google = createGoogleGenerativeAI({ apiKey });
-    const defaultModel = "gemini-flash-latest";
+    const google = createGoogleGenerativeAI({ apiKey: config.gemini.apiKey });
+    const openai = createOpenAI({ apiKey: config.openai.apiKey });
+
+    const defaultGeminiModel = "gemini-flash-latest";
+    const defaultOpenaiModel = "openai/gpt-4o-mini";
 
     return {
       generateStructuredObject: <T>({
-        modelName = defaultModel,
+        provider = "gemini",
+        modelName,
         system,
         prompt,
         schema,
       }: {
+        readonly provider?: "gemini" | "openai";
         readonly modelName?: string;
         readonly system?: string;
         readonly prompt: string;
@@ -53,7 +60,7 @@ export const AiServiceLive = Layer.sync(
       }) =>
         Effect.gen(function* () {
           // Cross-process testing override for offline headless E2E testing
-          if (fs.existsSync(".grug-mock-ai") || process.env.MOCK_AI_RESPONSE === "true") {
+          if (process.env.VITEST !== "true" && (fs.existsSync(".grug-mock-ai") || process.env.MOCK_AI_RESPONSE === "true")) {
             yield* Effect.logInfo(`[AiService] Intercepting prompt with mock testing response: "${prompt.substring(0, 40)}..."`);
             if (prompt.includes("compilation failed")) {
               return {
@@ -80,10 +87,13 @@ export const AiServiceLive = Layer.sync(
             return { files: [] } as unknown as T;
           }
 
+          const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : defaultGeminiModel);
+          const modelInstance = provider === "openai" ? openai(resolvedModel) : google(resolvedModel);
+
           const result = yield* Effect.tryPromise({
             try: () =>
               generateObject({
-                model: google(modelName),
+                model: modelInstance,
                 schema,
                 system,
                 prompt,
@@ -98,21 +108,26 @@ export const AiServiceLive = Layer.sync(
         }),
 
       streamText: ({
-        modelName = defaultModel,
+        provider = "gemini",
+        modelName,
         system,
         prompt,
       }: {
+        readonly provider?: "gemini" | "openai";
         readonly modelName?: string;
         readonly system?: string;
         readonly prompt: string;
       }) =>
         Effect.try({
-          try: () =>
-            streamText({
-              model: google(modelName),
+          try: () => {
+            const resolvedModel = modelName ?? (provider === "openai" ? defaultOpenaiModel : defaultGeminiModel);
+            const modelInstance = provider === "openai" ? openai(resolvedModel) : google(resolvedModel);
+            return streamText({
+              model: modelInstance,
               system,
               prompt,
-            }),
+            });
+          },
           catch: (cause) =>
             new AIInferenceError({
               message: `Failed to stream text: ${String(cause)}`,

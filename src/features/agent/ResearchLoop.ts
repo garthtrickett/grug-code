@@ -21,6 +21,7 @@ export interface IResearchLoop {
     readonly userPrompt: string;
     readonly projectStructure: string;
     readonly cwd?: string;
+    readonly provider?: "gemini" | "openai";
   }) => Effect.Effect<
     {
       readonly target_files: readonly string[];
@@ -39,7 +40,7 @@ export class ResearchLoop extends Context.Tag("ResearchLoop")<
 export const ResearchLoopLive = Layer.succeed(
   ResearchLoop,
   ResearchLoop.of({
-    run: ({ userPrompt, projectStructure, cwd }) =>
+    run: ({ userPrompt, projectStructure, cwd, provider }) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[ResearchLoop] Starting Stage 1 Skeletal Research Loop...");
 
@@ -54,8 +55,8 @@ export const ResearchLoopLive = Layer.succeed(
 Your objective is to review the lightweight flat map representation of the project structure and request the structural skeletons of the candidate files you think are highly relevant to planning the requested changes.
 
 Strict rules of state transition:
-1. If you need more structural context (interfaces, functions, types) for candidate files to formulate an accurate edit, transition to status "exploring" and specify the relative file paths in "request_skeletons_for".
-2. If you have all necessary structural information and understand how target files interact with their dependencies, transition to status "resolved". Formulate a concrete, step-by-step checklist of tasks in "plan" and identify the precise list of "target_files" destined for modification.
+1. If you need more structural context (interfaces, functions, types) for candidate files to formulate an accurate edit, transition to status \"exploring\" and specify the relative file paths in \"request_skeletons_for\".
+2. If you have all necessary structural information and understand how target files interact with their dependencies, transition to status \"resolved\". Formulate a concrete, step-by-step checklist of tasks in \"plan\" and identify the precise list of \"target_files\" destined for modification.
 3. You must keep the number of skeletal exploration turns minimal to maintain low-latency interactions. Avoid requesting files that are unrelated to the current target task.
 `;
 
@@ -66,7 +67,7 @@ Strict rules of state transition:
             if (!resolved.startsWith(rootDir)) {
               return yield* Effect.fail(
                 new ResearchLoopError({
-                  message: `Security validation failed: path traversal attempt detected for file path: "${rawPath}"`,
+                  message: `Security validation failed: path traversal attempt detected for file path: \"${rawPath}\"`,
                 })
               );
             }
@@ -88,18 +89,19 @@ Strict rules of state transition:
           }
 
           const prompt = `USER TASK / FEATURE REQUEST:
-"${userPrompt}"
+\"${userPrompt}\"
 
 LIGHTWEIGHT FLAT REPOSITORY MAP:
 ${projectStructure}
 ${skeletonsContext}
-Please review your current state. If you need more skeletons to confirm assumptions about dependencies, imports, or type signatures, transition your status to "exploring" and list them. Otherwise, formulate the final plan and transition to "resolved".`;
+Please review your current state. If you need more skeletons to confirm assumptions about dependencies, imports, or type signatures, transition your status to \"exploring\" and list them. Otherwise, formulate the final plan and transition to \"resolved\".`;
 
           yield* Effect.logDebug(`[ResearchLoop] Dispatching turn context to AiService...`);
           const response = yield* ai.generateStructuredObject({
             system: systemPrompt,
             prompt,
             schema: PlanningResponseSchema,
+            provider,
           });
 
           if (response.status === "resolved") {
@@ -125,7 +127,7 @@ Please review your current state. If you need more skeletons to confirm assumpti
 
             for (const rawPath of requestedPaths) {
               if (skeletonsMap.has(rawPath)) {
-                yield* Effect.logDebug(`[ResearchLoop] Bypassing already-hydrated skeleton: "${rawPath}"`);
+                yield* Effect.logDebug(`[ResearchLoop] Bypassing already-hydrated skeleton: \"${rawPath}\"`);
                 continue;
               }
 
@@ -135,13 +137,13 @@ Please review your current state. If you need more skeletons to confirm assumpti
                 try: () => fs.stat(safePath).then(() => true).catch(() => false),
                 catch: (cause) =>
                   new ResearchLoopError({
-                    message: `Failed to verify existence of candidate file path: "${rawPath}"`,
+                    message: `Failed to verify existence of candidate file path: \"${rawPath}\"`,
                     cause,
                   }),
               });
 
               if (!fileExists) {
-                yield* Effect.logWarning(`[ResearchLoop] Candidate file does not exist on disk: "${rawPath}". Recording stub.`);
+                yield* Effect.logWarning(`[ResearchLoop] Candidate file does not exist on disk: \"${rawPath}\". Recording stub.`);
                 skeletonsMap.set(rawPath, "// File not found in workspace");
                 continue;
               }
@@ -150,12 +152,12 @@ Please review your current state. If you need more skeletons to confirm assumpti
                 try: () => fs.readFile(safePath, "utf-8"),
                 catch: (cause) =>
                   new ResearchLoopError({
-                    message: `Failed to read candidate file: "${rawPath}"`,
+                    message: `Failed to read candidate file: \"${rawPath}\"`,
                     cause,
                   }),
               });
 
-              yield* Effect.logDebug(`[ResearchLoop] Parsing syntax structures for skeleton extraction: "${rawPath}"`);
+              yield* Effect.logDebug(`[ResearchLoop] Parsing syntax structures for skeleton extraction: \"${rawPath}\"`);
               const skeleton = yield* extractSkeleton(content, parserService.parser);
               skeletonsMap.set(rawPath, skeleton);
             }

@@ -5,6 +5,8 @@ import { z } from "zod";
 
 const mockGenerateObject = vi.fn();
 const mockStreamText = vi.fn();
+const mockGoogleModel = vi.fn().mockImplementation(() => "mocked-google-model");
+const mockOpenaiModel = vi.fn().mockImplementation(() => "mocked-openai-model");
 
 vi.mock("ai", () => ({
   generateObject: (...args: any[]) => mockGenerateObject(...args),
@@ -12,9 +14,11 @@ vi.mock("ai", () => ({
 }));
 
 vi.mock("@ai-sdk/google", () => ({
-  createGoogleGenerativeAI: () => {
-    return () => "mocked-model";
-  },
+  createGoogleGenerativeAI: () => mockGoogleModel,
+}));
+
+vi.mock("@ai-sdk/openai", () => ({
+  createOpenAI: () => mockOpenaiModel,
 }));
 
 describe("AiService Layer", () => {
@@ -40,6 +44,30 @@ describe("AiService Layer", () => {
 
     const result = await Effect.runPromise(program);
     expect(result).toEqual({ success: true });
+    expect(mockGoogleModel).toHaveBeenCalledWith("gemini-flash-latest");
+    expect(mockGenerateObject).toHaveBeenCalled();
+  });
+
+  it("should successfully generate a structured object using OpenAI when requested", async () => {
+    const dummySchema = z.object({
+      success: z.boolean(),
+    });
+
+    mockGenerateObject.mockResolvedValue({
+      object: { success: true },
+    });
+
+    const program = Effect.flatMap(AiService, (ai) =>
+      ai.generateStructuredObject({
+        provider: "openai",
+        prompt: "Say yes",
+        schema: dummySchema,
+      })
+    ).pipe(Effect.provide(AiServiceLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toEqual({ success: true });
+    expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-4o-mini");
     expect(mockGenerateObject).toHaveBeenCalled();
   });
 
@@ -80,6 +108,26 @@ describe("AiService Layer", () => {
     const result = await Effect.runPromise(program);
     expect(result).toBeDefined();
     expect((result as any).textStream).toBe("streaming-chunks");
+    expect(mockGoogleModel).toHaveBeenCalledWith("gemini-flash-latest");
+    expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it("should successfully initiate an OpenAI streaming text result", async () => {
+    mockStreamText.mockReturnValue({
+      textStream: "openai-streaming-chunks",
+    });
+
+    const program = Effect.flatMap(AiService, (ai) =>
+      ai.streamText({
+        provider: "openai",
+        prompt: "Stream this",
+      })
+    ).pipe(Effect.provide(AiServiceLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toBeDefined();
+    expect((result as any).textStream).toBe("openai-streaming-chunks");
+    expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-4o-mini");
     expect(mockStreamText).toHaveBeenCalled();
   });
 });

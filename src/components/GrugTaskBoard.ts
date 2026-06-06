@@ -70,11 +70,12 @@ export class GrugTaskBoard extends LitElement {
     const description = (form.elements.namedItem("description") as HTMLInputElement).value;
     const targetFilesRaw = (form.elements.namedItem("targetFiles") as HTMLInputElement).value;
     const targetFiles = targetFilesRaw.split(",").map((f) => f.trim()).filter(Boolean);
+    const provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai";
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
 
     runClientUnscoped(
       Effect.gen(function* () {
-        yield* taskStore.initTaskQueue(taskId, description, targetFiles, cwd, selectedScopeSignal.value);
+        yield* taskStore.initTaskQueue(taskId, description, targetFiles, cwd, selectedScopeSignal.value, provider);
       }).pipe(
         Effect.catchAll((err) =>
           clientLog("error", `[GrugTaskBoard] Failed to start task queue: ${this.getErrorMessage(err)}`)
@@ -310,16 +311,30 @@ export class GrugTaskBoard extends LitElement {
                   <!-- Zag.js Workspace Directory Scoping -->
                   ${this.renderSelect()}
 
-                  <div class="space-y-1">
-                    <label for="description" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Feature Description</label>
-                    <input 
-                      id="description" 
-                      name="description" 
-                      type="text" 
-                      required 
-                      placeholder="e.g. Fix memory leak inside Postgres client pooling during heavy load scenarios" 
-                      class="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
-                    />
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                      <label for="provider" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">AI Model Provider</label>
+                      <select 
+                        id="provider" 
+                        name="provider" 
+                        class="w-full px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm cursor-pointer"
+                      >
+                        <option value="gemini">Google Gemini (Default)</option>
+                        <option value="openai">OpenAI (GPT-4o)</option>
+                      </select>
+                    </div>
+
+                    <div class="space-y-1">
+                      <label for="description" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Feature Description</label>
+                      <input 
+                        id="description" 
+                        name="description" 
+                        type="text" 
+                        required 
+                        placeholder="e.g. Fix memory leak inside Postgres client pooling during heavy load scenarios" 
+                        class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
+                      />
+                    </div>
                   </div>
 
                   <button 

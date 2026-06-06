@@ -42,6 +42,7 @@ export const CorrectionLoopLive = Layer.effect(
           yield* Effect.logInfo(`[CorrectionLoop] Starting Stage 2 Self-Correction Loop for transaction: ${tx.id}`);
 
           const controller = makeWorkspaceController(cwd);
+          const provider = tx.provider;
 
           let patchToApply = instructions;
 
@@ -87,6 +88,7 @@ export const CorrectionLoopLive = Layer.effect(
               system: systemPrompt,
               prompt: initialPrompt,
               schema: PatchResponseSchema,
+              provider,
             }).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `AI initial patch generation failed: ${err.message}`, cause: err }))
             );
@@ -143,6 +145,7 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
                 system: systemPrompt,
                 prompt,
                 schema: PatchResponseSchema,
+                provider,
               }).pipe(
                 Effect.mapError((err) => new SelfCorrectionError({ message: `AI Structured Object generation failed: ${err.message}`, cause: err }))
               );
@@ -198,6 +201,7 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
                 system: systemPrompt,
                 prompt,
                 schema: PatchResponseSchema,
+                provider,
               }).pipe(
                 Effect.mapError((err) => new SelfCorrectionError({ message: `AI Structured Object generation failed: ${err.message}`, cause: err }))
               );

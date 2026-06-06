@@ -41,6 +41,7 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     baseBranch: "main",
     ephemeralBranch: "grug-task/test-correction-tx",
     checkpoints: [],
+    provider: "openai",
   };
 
   beforeEach(() => {
@@ -141,6 +142,9 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     expect(mockApplyPatch).toHaveBeenCalledTimes(2); // Initial patch + 1 corrective patch
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(2);
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(1);
+    expect(mockGenerateStructuredObject).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "openai" })
+    );
     expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 1");
   });
 
@@ -185,6 +189,9 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(4);
     expect(mockApplyPatch).toHaveBeenCalledTimes(4); // Initial patch + 3 corrective patches
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(3);
+    expect(mockGenerateStructuredObject).toHaveBeenLastCalledWith(
+      expect.objectContaining({ provider: "openai" })
+    );
     expect(mockCreateCheckpoint).not.toHaveBeenCalled();
   });
 

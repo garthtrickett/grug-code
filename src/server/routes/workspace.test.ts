@@ -97,13 +97,14 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
           "Content-Type": "application/json",
           "X-Grug-Token": token,
         },
-        body: JSON.stringify({ taskId: "api-patch-task-id" }),
+        body: JSON.stringify({ taskId: "api-patch-task-id", provider: "openai" }),
       })
     );
 
     expect(initResponse.status).toBe(200);
     const tx = await initResponse.json();
     expect(tx.ephemeralBranch).toBe("grug-task/api-patch-task-id");
+    expect(tx.provider).toBe("openai");
 
     const patchResponse = await app.handle(
       new Request("http://localhost/api/workspace/patch", {

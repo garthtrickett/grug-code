@@ -55,6 +55,23 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await tick();
   });
 
+  it("should render the AI provider select dropdown inside launch form", async () => {
+    await element.updateComplete;
+    await tick();
+
+    const providerSelect = element.querySelector("select[name='provider']") as HTMLSelectElement;
+    expect(providerSelect).not.toBeNull();
+    
+    const options = Array.from(providerSelect.querySelectorAll("option")).map(o => o.value);
+    expect(options).toContain("gemini");
+    expect(options).toContain("openai");
+
+    // Toggle option to openai
+    providerSelect.value = "openai";
+    providerSelect.dispatchEvent(new Event("change"));
+    expect(providerSelect.value).toBe("openai");
+  });
+
   afterEach(() => {
     if (element) {
       element.remove();

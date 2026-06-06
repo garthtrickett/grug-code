@@ -115,6 +115,39 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     }
   });
 
+  it("should forward provider parameter correctly to init API endpoint", async () => {
+    const mockTx = {
+      id: "task-provider-001",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/task-provider-001",
+      checkpoints: [],
+      provider: "openai"
+    };
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockTx,
+    });
+    global.fetch = fetchSpy as any;
+
+    const action = taskStore.initTaskQueue(
+      "task-provider-001",
+      "Test OpenAI Choice",
+      ["src/math.ts"],
+      undefined,
+      undefined,
+      "openai"
+    );
+    await runClientPromise(action);
+
+    expect(fetchSpy).toHaveBeenCalled();
+    const options = fetchSpy.mock.calls[0]?.[1] as any;
+    expect(options).toBeDefined();
+    const parsedBody = JSON.parse(options.body);
+    expect(parsedBody.provider).toBe("openai");
+  });
+
   it("should handle error messages returned from failed workspace initializations", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,

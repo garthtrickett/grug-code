@@ -43,7 +43,7 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
         ""
       ].join("\n")
     );
-                await fs.writeFile(
+                    await fs.writeFile(
       path.join(tempDir, "tsconfig.json"),
       JSON.stringify({
         compilerOptions: {
@@ -57,6 +57,20 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
         },
         include: ["main.ts", "main.test.ts"]
       }, null, 2)
+    );
+
+    await fs.writeFile(
+      path.join(tempDir, "vitest.config.ts"),
+      [
+        "import { defineConfig } from 'vitest/config';",
+        "",
+        "export default defineConfig({",
+        "  test: {",
+        "    include: ['main.test.ts'],",
+        "    environment: 'node',",
+        "  },",
+        "});"
+      ].join("\n")
     );
 
     await execPromise("git add .", { cwd: tempDir });

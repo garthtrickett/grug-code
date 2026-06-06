@@ -20,6 +20,14 @@ import { CorrectionLoop, CorrectionLoopLive } from "../../features/agent/Correct
 
 const runner = makeCommandRunner();
 
+const txSchema = t.Object({
+  id: t.String(),
+  baseBranch: t.String(),
+  ephemeralBranch: t.String(),
+  checkpoints: t.Array(t.String()),
+  provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai")]))
+});
+
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
@@ -111,12 +119,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return res.right;
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       paths: t.Array(t.String()),
       anchors: t.Array(t.Object({
         entityType: t.Union([t.Literal("class"), t.Literal("function"), t.Literal("method")]),
@@ -127,7 +130,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   })
   .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
-    const effect = controller.initTransaction(body.taskId);
+    const effect = controller.initTransaction(body.taskId, body.provider);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
@@ -137,7 +140,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   }, { 
     body: t.Object({
       taskId: t.String(),
-      cwd: t.Optional(t.String())
+      cwd: t.Optional(t.String()),
+      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai")]))
     })
   })
   .post("/patch", async ({ body, runEffect, set }) => {
@@ -164,12 +168,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return { success: true };
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       patch: t.Union([
         t.String(),
         t.Object({
@@ -232,12 +231,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return res.right;
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       paths: t.Array(t.String()),
       cwd: t.Optional(t.String())
     })
@@ -256,12 +250,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return res.right;
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       type: t.Union([t.Literal("typecheck"), t.Literal("test")]),
       cwd: t.Optional(t.String())
     })
@@ -278,12 +267,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return res.right;
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       commitHash: t.String(),
       cwd: t.Optional(t.String())
     })
@@ -299,12 +283,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return { success: true };
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       cwd: t.Optional(t.String())
     })
   })
@@ -319,12 +298,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return { success: true };
   }, { 
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       cwd: t.Optional(t.String())
     })
   })
@@ -350,12 +324,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     return res.right;
   }, {
     body: t.Object({
-      tx: t.Object({
-        id: t.String(),
-        baseBranch: t.String(),
-        ephemeralBranch: t.String(),
-        checkpoints: t.Array(t.String())
-      }),
+      tx: txSchema,
       targetFiles: t.Array(t.String()),
       instructions: t.String(),
       cwd: t.Optional(t.String())
@@ -374,6 +343,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         userPrompt: body.userPrompt,
         projectStructure,
         cwd: body.cwd,
+        provider: body.provider,
       });
 
       return result;
@@ -395,6 +365,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   }, {
     body: t.Object({
       userPrompt: t.String(),
-      cwd: t.Optional(t.String())
+      cwd: t.Optional(t.String()),
+      provider: t.Optional(t.Union([t.Literal("gemini"), t.Literal("openai")]))
     })
   });
