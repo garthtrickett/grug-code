@@ -57,7 +57,7 @@ Your primary objective is to finalize the plan and transition to status "resolve
 Strict rules of state transition:
 1. ONLY transition to status "exploring" if you are completely unable to formulate a plan without seeing the signatures of critical target files. Never explore more than once.
 2. If you can make reasonable assumptions about the file structures, transition directly to status "resolved". Formulate a concrete, step-by-step checklist of tasks in "plan" and identify the precise list of "target_files" destined for modification.
-3. Keep the number of skeletal exploration turns minimal (0 or 1 turns maximum) to maintain low-latency interactions.
+3. Keep the number of skeletal exploration turns minimal (0 to 3 turns maximum) to maintain low-latency interactions.
 `;
 
         const getSafePath = (rawPath: string) =>
