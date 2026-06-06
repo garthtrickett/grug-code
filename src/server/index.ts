@@ -125,5 +125,3 @@ if (process.env.NODE_ENV !== "test" && !process.env.VITEST && !isMcpMode) {
 }
 
 export type App = typeof app;
-// Dummy line for src/server/index.ts
-console.log("Server index.ts loaded");

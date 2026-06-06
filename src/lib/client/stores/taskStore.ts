@@ -101,7 +101,7 @@ const getHeaders = () => {
 };
 
 export const taskStore = {
-    clear: () =>
+  clear: () =>
     Effect.gen(function* () {
       tasksSignal.value = [];
       isPausedSignal.value = false;
@@ -141,6 +141,8 @@ export const taskStore = {
         catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
       });
 
+      yield* clientLog("info", "[taskStore] POST /api/workspace/research fetch response completed", response.status);
+
       isResearchingSignal.value = false;
 
       if (!response.ok) {
@@ -149,13 +151,18 @@ export const taskStore = {
           catch: () => ({ error: `HTTP error ${response.status}` }),
         });
         errorSignal.value = errObj.error;
+        yield* clientLog("error", "[taskStore] POST /api/workspace/research response was not OK", errObj.error);
         return yield* Effect.fail(new Error(errObj.error));
       }
+
+      yield* clientLog("info", "[taskStore] Parsing response JSON payload...");
 
       const researchResult = yield* Effect.tryPromise({ 
         try: () => response.json() as Promise<{ target_files: readonly string[]; plan: readonly PlanTask[] }>,
         catch: (e) => new Error(`Failed to parse research data: ${String(e)}`),
       });
+
+      yield* clientLog("info", "[taskStore] Parse successfully completed, updating signals...");
 
       proposedFilesSignal.value = researchResult.target_files;
       proposedTasksSignal.value = researchResult.plan;

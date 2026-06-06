@@ -128,7 +128,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-    .post("/init", async ({ body, runEffect, set }) => {
+  .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.initTransaction(body.taskId, body.provider);
     const res = await runEffect(Effect.either(effect));
@@ -330,13 +330,15 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-    .post("/research", async ({ body, runEffect, set }) => {
+  .post("/research", async ({ body, runEffect, set }) => {
     const effect = Effect.gen(function* () {
+      yield* Effect.logInfo("[WorkspaceRoute] Received POST /research request");
       const mapper = yield* ProjectStructureMapper;
       const loop = yield* ResearchLoop;
 
       // 1. Scan and index relative codebase path layout
       const projectStructure = yield* mapper.mapProject({ cwd: body.cwd });
+      yield* Effect.logInfo("[WorkspaceRoute] ProjectStructureMapper.mapProject completed successfully.");
 
       // 2. Dispatch prompts and execute multi-turn exploration sequence
       const result = yield* loop.run({
@@ -345,6 +347,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
         cwd: body.cwd,
         provider: body.provider,
       });
+      yield* Effect.logInfo("[WorkspaceRoute] ResearchLoop.run process completed successfully.");
 
       return result;
     }).pipe(
@@ -361,7 +364,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       set.status = 400;
       return { error: (res.left).message };
     }
-    return res.right;
+    await runEffect(Effect.logInfo("[WorkspaceRoute] Returning res.right back to Elysia client"));
+    return JSON.parse(JSON.stringify(res.right)) as unknown;
   }, {
     body: t.Object({
       userPrompt: t.String(),

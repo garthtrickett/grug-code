@@ -442,9 +442,9 @@ export class GrugTaskBoard extends LitElement {
                             name="provider" 
                             class="w-full px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm cursor-pointer"
                           >
-                            <option value="gemini">Google Gemini (Default)</option>
+                            <option value="deepseek">Deepseek V4 flash (Default) </option>
+                            <option value="gemini">Google Gemini </option>
                             <option value="openai">OpenAI (GPT-4o)</option>
-                            <option value="deepseek">Deepseek V4 flash</option>
                           </select>
                         </div>
 

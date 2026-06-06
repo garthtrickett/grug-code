@@ -52,12 +52,12 @@ export const ResearchLoopLive = Layer.succeed(
         let resolvedPlan: { target_files: readonly string[]; plan: readonly PlanTask[] } | null = null;
 
         const systemPrompt = `You are Grug Code Planning LLM, acting as a dependency-aware pre-planning research router.
-Your objective is to review the lightweight flat map representation of the project structure and request the structural skeletons of the candidate files you think are highly relevant to planning the requested changes.
+Your primary objective is to finalize the plan and transition to status "resolved" as quickly as possible (ideally on the VERY FIRST TURN).
 
 Strict rules of state transition:
-1. If you need more structural context (interfaces, functions, types) for candidate files to formulate an accurate edit, transition to status \"exploring\" and specify the relative file paths in \"request_skeletons_for\".
-2. If you have all necessary structural information and understand how target files interact with their dependencies, transition to status \"resolved\". Formulate a concrete, step-by-step checklist of tasks in \"plan\" and identify the precise list of \"target_files\" destined for modification.
-3. You must keep the number of skeletal exploration turns minimal to maintain low-latency interactions. Avoid requesting files that are unrelated to the current target task.
+1. ONLY transition to status "exploring" if you are completely unable to formulate a plan without seeing the signatures of critical target files. Never explore more than once.
+2. If you can make reasonable assumptions about the file structures, transition directly to status "resolved". Formulate a concrete, step-by-step checklist of tasks in "plan" and identify the precise list of "target_files" destined for modification.
+3. Keep the number of skeletal exploration turns minimal (0 or 1 turns maximum) to maintain low-latency interactions.
 `;
 
         const getSafePath = (rawPath: string) =>
@@ -88,12 +88,18 @@ Strict rules of state transition:
             skeletonsContext += "\n-----------------------------------------\n";
           }
 
+          let turnWarning = "";
+          if (turnCount >= 3) {
+            turnWarning = `\n⚠️ CRITICAL WARNING: You are on turn #${turnCount} of skeletal exploration. You are approaching the maximum iteration limit! You MUST transition to "resolved" now and output the target files and step plan. Do NOT continue to "exploring" unless absolutely critical.`;
+          }
+
           const prompt = `USER TASK / FEATURE REQUEST:
 \"${userPrompt}\"
 
 LIGHTWEIGHT FLAT REPOSITORY MAP:
 ${projectStructure}
-${skeletonsContext}
+${skeletonsContext}${turnWarning}
+
 Please review your current state. If you need more skeletons to confirm assumptions about dependencies, imports, or type signatures, transition your status to \"exploring\" and list them. Otherwise, formulate the final plan and transition to \"resolved\".`;
 
           yield* Effect.logDebug(`[ResearchLoop] Dispatching turn context to AiService...`);
@@ -164,6 +170,7 @@ Please review your current state. If you need more skeletons to confirm assumpti
           }
         }
 
+        yield* Effect.logInfo("[ResearchLoop] ResearchLoop.run successfully returning resolvedPlan to caller.");
         return resolvedPlan;
       }),
   })
