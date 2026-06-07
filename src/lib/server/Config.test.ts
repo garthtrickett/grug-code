@@ -1,9 +1,34 @@
-import { describe, it, expect } from "vitest";
-import { config } from "./Config.ts";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 describe("Server Config Unit Checks", () => {
-  it("should load openai config correctly from process.env", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("should load openai config correctly from process.env", async () => {
+    const { config } = await import("./Config.ts");
     expect(config.openai).toBeDefined();
     expect(typeof config.openai.apiKey).toBe("string");
+  });
+
+  it("should fall back to default surgical limits when environment variables are omitted", async () => {
+    vi.stubEnv("SURGICAL_ROUTER_FILE_LIMIT", "");
+    vi.stubEnv("SURGICAL_ROUTER_TOKEN_LIMIT", "");
+    vi.resetModules();
+    const { config } = await import("./Config.ts");
+    expect(config.surgical).toBeDefined();
+    expect(config.surgical.fileLimit).toBe(3);
+    expect(config.surgical.tokenLimit).toBe(20000);
+  });
+
+  it("should correctly parse custom surgical limits set via environment variables", async () => {
+    vi.stubEnv("SURGICAL_ROUTER_FILE_LIMIT", "10");
+    vi.stubEnv("SURGICAL_ROUTER_TOKEN_LIMIT", "100000");
+    vi.resetModules();
+    const { config } = await import("./Config.ts");
+    expect(config.surgical).toBeDefined();
+    expect(config.surgical.fileLimit).toBe(10);
+    expect(config.surgical.tokenLimit).toBe(100000);
   });
 });

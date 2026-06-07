@@ -34,10 +34,14 @@ export const config = {
   gemini: {
     apiKey: getEnvOrDefault("GEMINI_API_KEY", ""),
   },
-    openai: {
+  openai: {
     apiKey: getEnvOrDefault("OPENAI_API_KEY", ""),
   },
   deepseek: {
     apiKey: getEnvOrDefault("DEEPSEEK_API_KEY", ""),
+  },
+  surgical: {
+    fileLimit: parseInt(getEnvOrDefault("SURGICAL_ROUTER_FILE_LIMIT", "3"), 10),
+    tokenLimit: parseInt(getEnvOrDefault("SURGICAL_ROUTER_TOKEN_LIMIT", "20000"), 10),
   },
 };
