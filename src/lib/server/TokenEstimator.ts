@@ -79,18 +79,18 @@ export const TokenEstimatorLive = Layer.succeed(
         const text = yield* Effect.tryPromise({
           try: () => fs.readFile(filePath, "utf-8"),
           catch: (e) => new Error(`Failed to read file for token estimation: ${String(e)}`),
-        });
+        }).pipe(Effect.catchAll(() => Effect.succeed("")));
         return countTokens(text);
       }),
 
-        estimateTotalTokens: (filePaths: readonly string[]) =>
+    estimateTotalTokens: (filePaths: readonly string[]) =>
       Effect.gen(function* () {
         let total = 0;
         for (const filePath of filePaths) {
-          const content = yield* Effect.tryPromise({
+          const content = yield* Effect.tryPromise({ 
             try: () => fs.readFile(filePath, "utf-8"),
             catch: (e) => new Error(`Failed to read file ${filePath} for token estimation: ${String(e)}`),
-          });
+          }).pipe(Effect.catchAll(() => Effect.succeed("")));
           total += countTokens(content);
         }
         return total;
