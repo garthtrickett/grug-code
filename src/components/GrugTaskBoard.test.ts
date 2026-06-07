@@ -63,8 +63,10 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await import("./GrugTaskBoard");
   });
 
-  beforeEach(async () => {
+    beforeEach(async () => {
     await runClientPromise(taskStore.clear());
+    const projMod = await import("../lib/client/stores/projectStore");
+    await runClientPromise(projMod.projectStore.clear());
     element = document.createElement("grug-task-board");
     document.body.appendChild(element);
     await tick();
