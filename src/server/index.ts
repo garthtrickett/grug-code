@@ -312,7 +312,7 @@ if (shouldRunServers) {
     console.warn(`[UDS Startup] Failed to prepare socket path directory or unlink stale socket: ${String(err)}`);
   }
 
-  udsApp.listen(config.surgical.socketPath);
+  udsApp.listen({ unix: config.surgical.socketPath });
   console.info(`🔌 [UDS Server] Unix Domain Socket server is listening at ${String(socketPath)}`);
 
   const cleanupSocket = () => {

@@ -5,7 +5,7 @@ import { closeCentralDb } from "../db/client";
 import * as fs from "node:fs/promises";
 import * as http from "node:http";
 import * as fsSync from "node:fs";
-import { ReadableStream } from "node:stream/web";
+import { ReadableStream, type ReadableStreamDefaultController } from "node:stream/web";
 
 // Safe cross-runtime Bun polyfill for Vitest running under Node
 class MockGlob {
@@ -16,14 +16,14 @@ class MockGlob {
   scan(_options?: unknown): AsyncIterable<string> {
     return {
       [Symbol.asyncIterator]() {
-        return { 
+        return {
           next(): Promise<IteratorResult<string>> {
             return Promise.resolve({ done: true, value: undefined as unknown as string });
           }
         };
       }
     };
-  } 
+  }
   match(_path: string): boolean {
     return false;
   }
@@ -85,7 +85,7 @@ const mockBun = {
           body: req.method !== "GET" && req.method !== "HEAD" ? body : undefined,
         });
 
-        const fetchHandler = state.opts.fetch; 
+        const fetchHandler = state.opts.fetch;
         if (fetchHandler) {
           console.info("[mockBun.serve] Dispatching request to Elysia: " + req.method + " " + url.pathname);
           fetchHandler(webReq)
@@ -124,7 +124,7 @@ const mockBun = {
               res.statusCode = 500;
               res.end(err.message);
             });
-        } else { 
+        } else {
           console.warn("[mockBun.serve] No fetch handler configured on mock server");
           res.statusCode = 500;
           res.end("No fetch handler configured on mock server");
@@ -135,7 +135,7 @@ const mockBun = {
     const listenTarget = state.opts.unix || state.opts.port || 0;
     server.listen(listenTarget);
 
-        return {
+    return {
       get port(): number {
         const addr = server.address();
         return typeof addr === "object" && addr ? addr.port : 0;
@@ -144,8 +144,9 @@ const mockBun = {
         return "localhost";
       },
       stop: () => new Promise<void>((resolve) => {
-        if (typeof (server as any).closeAllConnections === "function") {
-          (server as any).closeAllConnections();
+        const s = server as unknown as { closeAllConnections?: () => void };
+        if (typeof s.closeAllConnections === "function") {
+          s.closeAllConnections();
         }
         server.close(() => {
           const unixPath = state.opts.unix;
@@ -235,7 +236,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
         if (isEventStream) {
           console.info("[customFetch] Detected Event Stream (SSE). Resolving Response immediately to enable streaming read.");
           const bodyStream = new ReadableStream<Uint8Array>({
-            start(controller) {
+            start(controller: ReadableStreamDefaultController) {
               res.on("data", (chunk: Uint8Array) => {
                 console.info("[customFetch] SSE chunk received: size=" + chunk.length + " for " + url.pathname);
                 controller.enqueue(new Uint8Array(chunk));
@@ -255,7 +256,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
             }
           });
 
-          const response = new Response(bodyStream, {
+          const response = new Response(bodyStream as unknown as BodyInit, {
             status: res.statusCode,
             statusText: res.statusMessage,
             headers: responseHeaders,
@@ -278,9 +279,9 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
           });
 
           Object.defineProperty(response, "body", {
-            get() { 
+            get() {
               return new ReadableStream<Uint8Array>({
-                start(controller) {
+                start(controller: ReadableStreamDefaultController) {
                   controller.enqueue(new Uint8Array(body));
                   controller.close();
                 }
