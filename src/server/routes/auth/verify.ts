@@ -11,7 +11,7 @@ export const verifyRoute = new Elysia()
   .use(effectPlugin)
   .post(
     "/verifyEmail",
-    async ({ body, set, runEffect }: { body: { token: string }; set: { status?: number | string }; runEffect: <A, E>(effect: Effect.Effect<A, E, unknown>) => Promise<A> }) => {
+    async ({ body, set, runEffect }) => {
       const verifyEffect = Effect.gen(function* () {
         const { token } = body;
 

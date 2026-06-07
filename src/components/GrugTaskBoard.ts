@@ -668,7 +668,7 @@ export class GrugTaskBoard extends LitElement {
     const form = e.target as HTMLFormElement;
     
             const getVal = (name: string): string => {
-      const el = form.querySelector(`[name="${name}"]`) as HTMLInputElement | null;
+      const el = form.querySelector(`[name="${name}"]`);
       return el ? el.value : "";
     };
 
