@@ -1,5 +1,6 @@
 import { test, expect } from "./utils/base-test.ts";
 import { createTestProject, deleteTestProject } from "./utils/seed.ts";
+import type { ProjectId } from "../../src/types/index.ts";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { exec } from "node:child_process";
@@ -10,7 +11,7 @@ const execPromise = promisify(exec);
 test.describe("Grug Task Board - Interactive Flow E2E", () => {
   let tempDir: string;
   let sessionToken: string;
-  let projectId: string;
+  let projectId: ProjectId;
 
   test.beforeAll(async () => {
     // Read local loopback session token securely

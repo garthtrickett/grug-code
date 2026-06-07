@@ -2,7 +2,7 @@ import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";
 import { Argon2id } from "oslo/password";
 import { randomUUID } from "node:crypto";
-import type { Database, UserId } from "../../../src/types/index.ts";
+import type { Database, UserId, ProjectId } from "../../../src/types/index.ts";
 import { ROLE_PERMISSIONS } from "../../../src/lib/shared/permissions.ts";
 
 const connectionString =
@@ -74,8 +74,8 @@ export const cleanupTestUser = async (data: { userId?: string }) => {
 
 export const getTestConnectionString = () => connectionString;
 
-export const createTestProject = async (name: string, rootPath: string) => {
-  const projectId = randomUUID() as any;
+export const createTestProject = async (name: string, rootPath: string): Promise<ProjectId> => {
+  const projectId = randomUUID() as ProjectId;
   await db.insertInto("project").values({
     id: projectId,
     name,
@@ -86,6 +86,6 @@ export const createTestProject = async (name: string, rootPath: string) => {
   return projectId;
 };
 
-export const deleteTestProject = async (projectId: string) => {
-  await db.deleteFrom("project").where("id", "=", projectId as any).execute();
+export const deleteTestProject = async (projectId: ProjectId) => {
+  await db.deleteFrom("project").where("id", "=", projectId).execute();
 };

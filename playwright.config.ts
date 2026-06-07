@@ -52,7 +52,8 @@ export default defineConfig({
       BACKEND_PORT: "42070",
       VITE_SILENT_CLIENT_LOGGING: "true",
       SURGICAL_ROUTER_FILE_LIMIT: "3",
-      SURGICAL_ROUTER_TOKEN_LIMIT: "20000"
+      SURGICAL_ROUTER_TOKEN_LIMIT: "20000",
+      DATABASE_URL: process.env.DATABASE_URL_TEST || process.env.DATABASE_URL || ""
     }
   },
 });
