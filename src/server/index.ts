@@ -10,6 +10,7 @@ import { staticPlugin } from "@elysiajs/static";
 import { effectPlugin } from "./middleware/effect-plugin";
 import { authRoutes } from "./routes/auth.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
+import { projectRoutes } from "./routes/projects.ts";
 import { getActiveToken } from "./middleware/security.ts";
 
 import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr } from "../lib/server/mcp/McpServer.ts";
@@ -93,8 +94,9 @@ export const app = new Elysia({
     await runEffect(logEffect);
     return { success: true };
   })
-  .use(authRoutes)
+    .use(authRoutes)
   .use(workspaceRoutes)
+  .use(projectRoutes)
   .use(
     staticPlugin({
       assets: "./dist/assets",
