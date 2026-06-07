@@ -5,6 +5,8 @@ import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { makeWorkspaceController } from "./WorkspaceController";
+import { db } from "../../db/client";
+import type { ProjectId } from "../../types";
 
 const execPromise = promisify(exec);
 
@@ -13,12 +15,12 @@ describe("WorkspaceController - Git Transaction Core", () => {
 
   beforeEach(async () => {
     tempDir = path.join(process.cwd(), `.grug-temp-test-${crypto.randomUUID()}`);
-        await fs.mkdir(tempDir, { recursive: true });
+    await fs.mkdir(tempDir, { recursive: true });
 
     await execPromise("git init", { cwd: tempDir });
-    await execPromise("git config user.name 'Grug Test'", { cwd: tempDir });
-    await execPromise("git config user.email 'grug@test.com'", { cwd: tempDir });
-    await execPromise("git config commit.gpgSign false", { cwd: tempDir });
+    await execPromise("git config user.name 'Grug Test'");
+    await execPromise("git config user.email 'grug@test.com'");
+    await execPromise("git config commit.gpgSign false");
 
     await fs.writeFile(path.join(tempDir, ".gitignore"), ".grug-active-transaction.json\n");
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Grug initialize codebase.\n");
@@ -146,7 +148,7 @@ Grug applied patch success.
     expect(result).toContain("src");
     expect(result).toContain("src/components");
     expect(result).not.toContain("node_modules");
-        expect(result).not.toContain("node_modules/lodash");
+    expect(result).not.toContain("node_modules/lodash");
     expect(result).not.toContain("dist");
     expect(result).not.toContain(".git");
   });
@@ -191,5 +193,60 @@ Grug applied patch success.
     await Effect.runPromise(controller.abortTransaction(tx3));
     const existsAfterAbort = await fs.stat(stateFile).then(() => true).catch(() => false);
     expect(existsAfterAbort).toBe(false);
+  });
+
+  it("should execute project-specific commands if a registered project matches root_path === cwd", async () => {
+    const absoluteTempDir = path.resolve(tempDir);
+    const projectId = crypto.randomUUID() as ProjectId;
+
+    await db.insertInto("project")
+      .values({
+        id: projectId,
+        name: "Mock Echo Project",
+        root_path: absoluteTempDir,
+        type_check_command: "echo typecheck-passed",
+        lint_command: "echo lint-passed",
+        test_command: "echo test-passed"
+      })
+      .execute();
+
+    const controller = makeWorkspaceController(tempDir);
+    const tx = await Effect.runPromise(controller.initTransaction("task-custom-commands"));
+
+    const tcResult = await Effect.runPromise(controller.runTypeCheck(tx));
+    expect(tcResult.success).toBe(true);
+
+    const lcResult = await Effect.runPromise(controller.runLintCheck(tx));
+    expect(lcResult.success).toBe(true);
+
+    const tsResult = await Effect.runPromise(controller.runTestSuite(tx));
+    expect(tsResult.success).toBe(true);
+
+    await db.deleteFrom("project").where("id", "=", projectId).execute();
+    await Effect.runPromise(controller.abortTransaction(tx));
+  });
+
+  it("should capture failed custom commands stdout/stderr in VerificationResult", async () => {
+    const absoluteTempDir = path.resolve(tempDir);
+    const projectId = crypto.randomUUID() as ProjectId;
+
+    await db.insertInto("project")
+      .values({
+        id: projectId,
+        name: "Failing Custom Project",
+        root_path: absoluteTempDir,
+        type_check_command: "bun -e console.error('typecheck-failure-details');process.exit(1)"
+      })
+      .execute();
+
+    const controller = makeWorkspaceController(tempDir);
+    const tx = await Effect.runPromise(controller.initTransaction("task-failing-command"));
+
+    const result = await Effect.runPromise(controller.runTypeCheck(tx));
+    expect(result.success).toBe(false);
+    expect(result.errorOutput).toContain("typecheck-failure-details");
+
+    await db.deleteFrom("project").where("id", "=", projectId).execute();
+    await Effect.runPromise(controller.abortTransaction(tx));
   });
 });

@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { applyDiffs } from "./AiderPatcher";
 import type { PlanTask } from "../shared/ai-schemas.ts";
+import { db } from "../../db/client";
 
 export interface DirtyFile {
   readonly filePath: string;
@@ -32,6 +33,7 @@ export interface WorkspaceController {
   ) => Effect.Effect<GitTransaction, Error>;
   readonly applyPatch: (tx: GitTransaction, patch: string) => Effect.Effect<void, Error>;
   readonly runTypeCheck: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
+  readonly runLintCheck: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
   readonly runTestSuite: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
   readonly createCheckpoint: (
     tx: GitTransaction,
@@ -91,10 +93,25 @@ const runCommand = (args: string[], cwd?: string, env?: Record<string, string>) 
     catch: (error) => new Error(`Failed to execute command ${args.join(" ")}: ${String(error)}`),
   });
 
+const parseCommandString = (cmdStr: string): string[] => {
+  return cmdStr.trim().split(/\s+/).filter(Boolean);
+};
+
 export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
   const txFile = path.resolve(cwd || process.cwd(), ".grug-active-transaction.json");
 
-    const updateStateFile = (tx: GitTransaction, tasks?: readonly PlanTask[]) =>
+  const getProject = () =>
+    Effect.gen(function* () {
+      if (!cwd) return null;
+      const absoluteCwd = path.resolve(cwd);
+      const project = yield* Effect.tryPromise({
+        try: () => db.selectFrom("project").selectAll().where("root_path", "=", absoluteCwd).executeTakeFirst(),
+        catch: (e) => new Error(`Database error looking up project: ${String(e)}`),
+      }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+      return project || null;
+    });
+
+  const updateStateFile = (tx: GitTransaction, tasks?: readonly PlanTask[]) =>
     Effect.gen(function* () {
       yield* Effect.logInfo("[WorkspaceController] Syncing transaction state to file: " + txFile);
       let currentTasks = tasks;
@@ -123,7 +140,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
       });
     });
 
-    const deleteStateFile = () =>
+  const deleteStateFile = () =>
     Effect.gen(function* () {
       yield* Effect.logInfo("[WorkspaceController] Cleaning up state file: " + txFile);
       const exists = yield* Effect.tryPromise({
@@ -222,7 +239,10 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
     runTypeCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
-        const cmd = ["bun", "x", "tsc", "--noEmit"];
+        const proj = yield* getProject();
+        const cmd = proj && proj.type_check_command 
+          ? parseCommandString(proj.type_check_command) 
+          : ["bun", "x", "tsc", "--noEmit"];
         const result = yield* runCommand(cmd, cwd);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
@@ -240,10 +260,38 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
+    runLintCheck: (_tx: GitTransaction) =>
+      Effect.gen(function* () {
+        yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
+        const proj = yield* getProject();
+        if (!proj || !proj.lint_command) {
+          return { success: true, dirtyFiles: [] };
+        }
+        const cmd = parseCommandString(proj.lint_command);
+        const result = yield* runCommand(cmd, cwd);
+        const success = result.exitCode === 0;
+        const dirtyFiles = yield* getDirtyFiles();
+
+        if (!success) {
+          yield* Effect.logWarning("[WorkspaceController] Lint check failures caught.");
+        } else {
+          yield* Effect.logInfo("[WorkspaceController] Lint check passed successfully.");
+        }
+
+        return {
+          success,
+          errorOutput: success ? undefined : result.stdout + "\n" + result.stderr,
+          dirtyFiles,
+        };
+      }),
+
     runTestSuite: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
-        const cmd = ["bun", "run", "test"];
+        const proj = yield* getProject();
+        const cmd = proj && proj.test_command 
+          ? parseCommandString(proj.test_command) 
+          : ["bun", "run", "test"];
         const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" });
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
@@ -434,7 +482,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         return dirs;
       }),
 
-        readTransactionState: () =>
+    readTransactionState: () =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Reading active transaction state from disk...");
         const exists = yield* Effect.tryPromise({
@@ -477,4 +525,4 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         return state;
       }),
   };
-};;
+};

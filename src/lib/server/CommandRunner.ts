@@ -19,8 +19,9 @@ export interface CommandResult {
 
 export interface CommandRunner {
   readonly run: (args: string[], options?: CommandOptions) => Effect.Effect<CommandResult, Error>;
-  readonly runTypeCheck: (cwd?: string, timeoutMs?: number) => Effect.Effect<VerificationResult, Error>;
-  readonly runTestSuite: (cwd?: string, timeoutMs?: number) => Effect.Effect<VerificationResult, Error>;
+  readonly runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) => Effect.Effect<VerificationResult, Error>;
+  readonly runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) => Effect.Effect<VerificationResult, Error>;
+  readonly runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string) => Effect.Effect<VerificationResult, Error>;
 }
 
 export const parseTscErrors = (output: string): readonly string[] => {
@@ -37,6 +38,10 @@ export const parseTscErrors = (output: string): readonly string[] => {
     if (match[1]) files.add(match[1].trim());
   }
   return Array.from(files);
+};
+
+export const parseCommandString = (cmdStr: string): string[] => {
+  return cmdStr.trim().split(/\s+/).filter(Boolean);
 };
 
 export const parseTestFailures = (output: string): readonly string[] => {
@@ -173,9 +178,10 @@ export const makeCommandRunner = (): CommandRunner => {
   return {
     run,
 
-    runTypeCheck: (cwd?: string, timeoutMs?: number) =>
+    runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) =>
       Effect.gen(function* () {
-        const result = yield* run(["bun", "x", "tsc", "--noEmit"], { cwd, timeoutMs: timeoutMs ?? 30000 });
+        const args = customCommand ? parseCommandString(customCommand) : ["bun", "x", "tsc", "--noEmit"];
+        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000 });
         
         if (result.success) {
           return { success: true, dirtyFiles: [] };
@@ -190,10 +196,32 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-    runTestSuite: (cwd?: string, timeoutMs?: number) =>
+    runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) =>
+      Effect.gen(function* () {
+        if (!customCommand) {
+          return { success: true, dirtyFiles: [] };
+        }
+        const args = parseCommandString(customCommand);
+        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000 });
+        
+        if (result.success) {
+          return { success: true, dirtyFiles: [] };
+        }
+
+        yield* Effect.logWarning("[CommandRunner] Lint check failed. Extracting file context...");
+        const dirtyFiles = yield* getDirtyFilesFromGit(cwd);
+        return {
+          success: false,
+          errorOutput: result.stdout + "\n" + result.stderr,
+          dirtyFiles,
+        };
+      }),
+
+    runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
-        const result = yield* run(["bun", "run", "test"], { 
+        const args = customCommand ? parseCommandString(customCommand) : ["bun", "run", "test"];
+        const result = yield* run(args, { 
           cwd, 
           timeoutMs: timeoutMs ?? 45000,
           env: { NODE_ENV: "test" }
@@ -203,7 +231,7 @@ export const makeCommandRunner = (): CommandRunner => {
           return { success: true, dirtyFiles: [] };
         }
 
-        yield* Effect.logWarning(`[CommandRunner] Testing suites failed. Output:\\n${result.stdout}\\n${result.stderr}`);
+        yield* Effect.logWarning(`[CommandRunner] Testing suites failed. Output:\n${result.stdout}\n${result.stderr}`);
         const dirtyFiles = yield* getDirtyFilesFromGit(cwd);
         return {
           success: false,

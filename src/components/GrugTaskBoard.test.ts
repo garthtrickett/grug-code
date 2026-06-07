@@ -3,7 +3,6 @@
 import { JSDOM } from "jsdom";
 import * as nodeCrypto from "node:crypto";
 
-// MUST RUN BEFORE ANY OTHER IMPORTS TO BIND LIT GLOBALS CORRECTLY
 if (typeof globalThis.document === "undefined") {
   const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>", {
     url: "http://localhost",
@@ -16,7 +15,6 @@ if (typeof globalThis.document === "undefined") {
   (globalThis as any).navigator = dom.window.navigator;
 }
 
-// Guarantee crypto is defined for ID generation in jsdom tests
 if (typeof globalThis.crypto === "undefined" || !globalThis.crypto.randomUUID) {
   (globalThis as any).crypto = nodeCrypto;
 }
@@ -45,7 +43,6 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   let isDiscussingSignal: any;
 
   beforeAll(async () => {
-    // Dynamic import to prevent hoisting of Lit before JSDOM polyfills are bound
     const storeMod = await import("../lib/client/stores/taskStore");
     taskStore = storeMod.taskStore;
     tasksSignal = storeMod.tasksSignal;
@@ -84,7 +81,6 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(options).toContain("gemini");
     expect(options).toContain("openai");
 
-    // Toggle option to openai
     providerSelect.value = "openai";
     providerSelect.dispatchEvent(new Event("change"));
     expect(providerSelect.value).toBe("openai");
@@ -106,7 +102,6 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     const studyHeader = element.querySelector("h2") as any;
     expect(studyHeader?.textContent || "").toContain("Grug studying codebase");
 
-    // Restore state
     isResearchingSignal.value = false;
   });
 
@@ -134,12 +129,10 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     const stepDescription = element.querySelector("h4") as any;
     expect(stepDescription?.textContent || "").toContain("Perform a study step");
 
-    // Click a file checklist checkbox and assert toggle
     expect(checkboxes[0]?.checked).toBe(true);
     checkboxes[0]?.click();
     expect(checkboxes[0]?.checked).toBe(false);
 
-    // Clean up
     isPlanningSignal.value = false;
     proposedFilesSignal.value = [];
     proposedTasksSignal.value = [];
@@ -161,7 +154,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await tick();
 
     const checkboxes = Array.from(element.querySelectorAll("input[type='checkbox']")) as HTMLInputElement[];
-    checkboxes[1]?.click(); // Uncheck 'src/b.ts'
+    checkboxes[1]?.click(); 
 
     const approveSpy = vi.spyOn(taskStore, "initTaskQueue");
 
@@ -210,7 +203,6 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(buttons).toContain("Option X");
     expect(buttons).toContain("Option Y");
 
-    // Clean up
     isDiscussingSignal.value = false;
     discussionTextSignal.value = "";
     suggestedOptionsSignal.value = [];
@@ -234,9 +226,19 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(form).not.toBeNull();
   });
 
-  it("should render the directory scope dropdown when activeTxSignal is null", async () => {
+  it("should render the directory scope dropdown when activeTxSignal is null and project is active", async () => {
     const dMod = await import("../lib/client/stores/directoryStore");
+    const pMod = await import("../lib/client/stores/projectStore");
+    
     dMod.directoriesSignal.value = ["apps/web", "packages/core"];
+    pMod.activeProjectSignal.value = {
+      id: "p-test",
+      name: "Test",
+      root_path: "/test",
+      type_check_command: null,
+      lint_command: null,
+      test_command: null
+    };
 
     await element.updateComplete;
     await tick();
@@ -246,8 +248,34 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     );
     expect(selectLabel).toBeDefined();
 
-    const triggerBtn = element.querySelector("button[role='combobox']");
+    const triggerBtn = element.querySelector("button[id='directory-scope-select-trigger']");
     expect(triggerBtn).not.toBeNull();
+  });
+
+  it("should render the project selector dropdown and configure button when activeTxSignal is null", async () => {
+    const projMod = await import("../lib/client/stores/projectStore");
+    projMod.projectsSignal.value = [
+      {
+        id: "p-mock-1",
+        name: "Mock Website API",
+        root_path: "/workspace/mock-website-api",
+        type_check_command: null,
+        lint_command: null,
+        test_command: null,
+      }
+    ];
+
+    await element.updateComplete;
+    await tick();
+
+    const triggerBtn = element.querySelector("button[id='project-select-api-trigger']");
+    expect(triggerBtn).not.toBeNull();
+    expect(triggerBtn?.textContent).toContain("Select Registered Project");
+
+    const configBtn = Array.from(element.querySelectorAll("button")).find(
+      (b: any) => b.textContent?.trim().includes("Configure Projects")
+    ) as HTMLButtonElement;
+    expect(configBtn).toBeDefined();
   });
 
   it("should render the active task queue checklist when activeTxSignal is populated", async () => {

@@ -165,9 +165,63 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               continue;
             }
 
-            yield* Effect.logInfo("[CorrectionLoop] Typecheck passed. Running behavioral tests...");
+            // 2. Run static lint check
+            yield* Effect.logInfo(`[CorrectionLoop] Running lint check (aggregate attempts: ${aggregateAttempts}/3)...`);
+            const lintResult = yield* controller.runLintCheck(tx).pipe(
+              Effect.mapError((err) => new SelfCorrectionError({ message: `Lint check execution failed: ${err.message}`, cause: err }))
+            );
 
-            // 2. Run behavioral test suite
+            if (!lintResult.success) {
+              yield* Effect.logWarning("[CorrectionLoop] Lint check failed. Initiating static self-correction...");
+
+              if (aggregateAttempts >= 3) {
+                yield* Effect.logError("[CorrectionLoop] Maximum aggregate correction attempts (3) reached on lint check failure. Aborting execution.");
+                return yield* Effect.fail(
+                  new SelfCorrectionError({
+                    message: "Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during lint check. Aborting step execution.",
+                  })
+                );
+              }
+
+              // Construct Lint Feedback Prompt Blueprint
+              let prompt = `Project linting failed with the following check output:\n\n${lintResult.errorOutput || "Unknown lint error."}\n\n`;
+              prompt += "The following currently modified (dirty) files are relevant to the failure:\n\n";
+
+              for (const file of lintResult.dirtyFiles) {
+                prompt += `File Path: ${file.filePath}\n`;
+                prompt += `Current File Content:\n${file.content}\n`;
+                prompt += "----------------------------------------\n";
+              }
+
+              prompt += "\nPlease analyze the linting errors and generate a corrective search-and-replace block targeting only these discrepancies to restore clean code style.";
+
+              const systemPrompt = `You are Grug Code Self-Correction LLM, acting as a lint restorer.
+Your objective is to review linter checks output, inspect the active file modifications, and generate a precise corrective patch.
+Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do not add conversational text.`;
+
+              yield* Effect.logInfo("[CorrectionLoop] Dispatching lint failure context to AiService for self-healing...");
+              const correction = yield* ai.generateStructuredObject({
+                system: systemPrompt,
+                prompt,
+                schema: PatchResponseSchema,
+                provider,
+              }).pipe(
+                Effect.mapError((err) => new SelfCorrectionError({ message: `AI Structured Object generation failed: ${err.message}`, cause: err }))
+              );
+
+              const patchPayload = JSON.stringify(correction);
+              aggregateAttempts++;
+              yield* Effect.logInfo(`[CorrectionLoop] Applying AI generated corrective patch (attempt ${aggregateAttempts}/3)...`);
+              yield* controller.applyPatch(tx, patchPayload).pipe(
+                Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply corrective patch: ${err.message}`, cause: err }))
+              );
+
+              // Loop back immediately to verify style changes didn't break compilation
+              continue;
+            }
+
+            // 3. Run behavioral test suite
+            yield* Effect.logInfo(`[CorrectionLoop] Running behavioral tests (aggregate attempts: ${aggregateAttempts}/3)...`);
             const testResult = yield* controller.runTestSuite(tx).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Test suite execution failed: ${err.message}`, cause: err }))
             );
@@ -221,11 +275,11 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               continue;
             }
 
-            yield* Effect.logInfo("[CorrectionLoop] Both typecheck and behavioral tests passed cleanly!");
+            yield* Effect.logInfo("[CorrectionLoop] Typecheck, lint, and behavioral tests passed cleanly!");
             verified = true;
           }
 
-                    // Save checkpoint upon complete verification
+          // Save checkpoint upon complete verification
           yield* Effect.logInfo("[CorrectionLoop] Saving stable Git checkpoint milestone...");
           const checkpointMessage = `self-correction success - aggregate attempts: ${aggregateAttempts}`;
           

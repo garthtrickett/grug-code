@@ -29,18 +29,27 @@ import {
   fetchWorkspaceDirectories,
   createDirectorySelectMachine,
 } from "../lib/client/stores/directoryStore.ts";
+import {
+  projectsSignal,
+  activeProjectSignal,
+  projectStore,
+  createProjectSelectMachine,
+} from "../lib/client/stores/projectStore.ts";
 
 @customElement("grug-task-board")
 export class GrugTaskBoard extends LitElement {
   private _disposeEffect?: () => void;
   private _selectService: ReturnType<typeof createDirectorySelectMachine> | null = null;
+  private _projectSelectService: ReturnType<typeof createProjectSelectMachine> | null = null;
   private _checkedFiles = new Set<string>();
   private _description = "";
   private _provider: "gemini" | "openai" | "deepseek" = "gemini";
   @state() private _discussionMode = false;
+  @state() private _showConfig = false;
+  @state() private _editProjId: string | null = null;
 
   protected override createRenderRoot() {
-    return this; // Render in Light DOM to inherit Tailwind styles
+    return this; 
   }
 
   private slugify(text: string): string {
@@ -53,9 +62,9 @@ export class GrugTaskBoard extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
 
-    // Load available directories for scoping
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
     runClientUnscoped(fetchWorkspaceDirectories(cwd));
+    runClientUnscoped(projectStore.fetchProjects());
 
     this._disposeEffect = effect(() => {
       void tasksSignal.value;
@@ -73,6 +82,8 @@ export class GrugTaskBoard extends LitElement {
       void discussionTextSignal.value;
       void suggestedOptionsSignal.value;
       void isDiscussingSignal.value;
+      void projectsSignal.value;
+      void activeProjectSignal.value;
 
       const files = proposedFilesSignal.value;
       if (isPlanningSignal.value && this._checkedFiles.size === 0) {
@@ -368,6 +379,308 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
+  private getProjectSelectApi() {
+    const projects = projectsSignal.value;
+
+    if (!this._projectSelectService) {
+      const collection = select.collection({
+        items: [...projects],
+        itemToString: (item) => item ? `${item.name} (${item.root_path})` : "Select Project",
+        itemToValue: (item) => item ? item.id : "",
+      });
+
+      const service = new VanillaMachine(select.machine, {
+        id: "project-select-api",
+        collection,
+        value: activeProjectSignal.value ? [activeProjectSignal.value.id] : [],
+        onValueChange(details: select.ValueChangeDetails<string>) {
+          const selectedId = details.value[0] || "";
+          const found = projectsSignal.value.find((p) => p.id === selectedId);
+          runClientUnscoped(projectStore.selectProject(found || null));
+        },
+      });
+
+      this._projectSelectService = service;
+      service.start();
+
+      service.subscribe(() => {
+        this.requestUpdate();
+      });
+    } else {
+      const collection = select.collection({
+        items: [...projects],
+        itemToString: (item) => item ? `${item.name} (${item.root_path})` : "Select Project",
+        itemToValue: (item) => item ? item.id : "",
+      });
+      if (this._projectSelectService && this._projectSelectService.updateProps) {
+        this._projectSelectService.updateProps({ collection });
+      }
+    }
+
+    return select.connect(this._projectSelectService.service, normalizeProps);
+  }
+
+  private renderProjectSelect() {
+    const api = this.getProjectSelectApi();
+    const projects = projectsSignal.value;
+
+    return html`
+      <div class="space-y-1 relative" id=${api.getRootProps().id}>
+        <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block" id=${api.getLabelProps().id}>
+          Active Project Workspace
+        </label>
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <button
+              type="button"
+              id=${api.getTriggerProps().id}
+              role="combobox"
+              @click=${() => {
+                if (api.open) {
+                  api.setOpen(false);
+                } else {
+                  api.setOpen(true);
+                }
+              }}
+              class="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 text-sm focus:outline-none focus:border-zinc-650 cursor-pointer animate-fade-in"
+            >
+              <span>${activeProjectSignal.value ? `${activeProjectSignal.value.name} (${activeProjectSignal.value.root_path})` : "Select Registered Project"}</span>
+              <span class="text-zinc-500 text-xs">▼</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            @click=${() => { this._showConfig = !this._showConfig; this.requestUpdate(); }}
+            class="px-4 py-2.5 bg-zinc-850 hover:bg-zinc-800 text-white rounded text-xs font-bold transition-all cursor-pointer shrink-0"
+          >
+            ${this._showConfig ? "Close Config" : "Configure Projects"}
+          </button>
+        </div>
+
+        ${api.open
+          ? html`
+              <ul
+                id=${api.getContentProps().id}
+                role="listbox"
+                class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded border border-zinc-850 bg-zinc-950 py-1 shadow-lg text-sm text-zinc-200"
+              >
+                ${projects.map((proj) => {
+                  const isSelected = activeProjectSignal.value?.id === proj.id;
+                  return html`
+                    <li
+                      role="option"
+                      aria-selected=${isSelected}
+                      @click=${() => {
+                        runClientUnscoped(projectStore.selectProject(proj));
+                        api.setOpen(false);
+                      }}
+                      class="relative cursor-pointer select-none py-2 px-3 hover:bg-zinc-900 transition-colors ${isSelected ? "bg-zinc-900 font-semibold text-white" : ""}"
+                    >
+                      ${proj.name} (${proj.root_path})
+                    </li>
+                  `;
+                })}
+              </ul>
+            `
+          : ""}
+      </div>
+    `;
+  }
+
+  private renderProjectConfig() {
+    if (!this._showConfig) return "";
+
+    const projects = projectsSignal.value;
+
+    return html`
+      <div class="p-6 bg-zinc-900/50 border border-zinc-800 rounded-lg space-y-6 animate-fade-in">
+        <div class="flex items-center justify-between border-b border-zinc-850 pb-3">
+          <h3 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Project Registry Settings</h3>
+          <button
+            type="button"
+            @click=${() => { this._editProjId = "new"; this.requestUpdate(); }}
+            class="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-bold transition-all cursor-pointer"
+          >
+            + Add Project
+          </button>
+        </div>
+
+        ${this._editProjId
+          ? this.renderProjectForm()
+          : html`
+              <div class="space-y-3">
+                ${projects.length === 0
+                  ? html`<p class="text-xs text-zinc-400 italic">No projects registered. Click "Add Project" to begin.</p>`
+                  : projects.map((proj) => html`
+                      <div class="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-850 rounded-lg text-sm">
+                        <div class="space-y-1">
+                          <h4 class="font-semibold text-white">${proj.name}</h4>
+                          <p class="text-xs text-zinc-400 font-mono">CWD: ${proj.root_path}</p>
+                          ${proj.type_check_command || proj.lint_command || proj.test_command
+                            ? html`
+                                <p class="text-[10px] text-zinc-500 font-mono">
+                                  ${proj.type_check_command ? `TC: ${proj.type_check_command} | ` : ""}
+                                  ${proj.lint_command ? `Lint: ${proj.lint_command} | ` : ""}
+                                  ${proj.test_command ? `Test: ${proj.test_command}` : ""}
+                                </p>
+                              `
+                            : ""}
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <button
+                            type="button"
+                            @click=${() => { this._editProjId = proj.id; this.requestUpdate(); }}
+                            class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            @click=${() => this.handleDeleteProject(proj.id)}
+                            class="px-2.5 py-1 bg-red-900/40 hover:bg-red-900 text-red-300 rounded text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    `)}
+              </div>
+            `}
+      </div>
+    `;
+  }
+
+  private renderProjectForm() {
+    const isNew = this._editProjId === "new";
+    const proj = projectsSignal.value.find((p) => p.id === this._editProjId);
+
+    return html`
+      <form @submit=${this.handleProjectFormSubmit} class="space-y-4 bg-zinc-950 p-4 border border-zinc-850 rounded-lg animate-fade-in">
+        <h4 class="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+          ${isNew ? "Register New Project" : `Edit Project: ${proj?.name}`}
+        </h4>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Project Name</label>
+            <input
+              name="name"
+              type="text"
+              required
+              .value=${proj?.name || ""}
+              placeholder="e.g. My Website API"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Root Folder Path (CWD)</label>
+            <input
+              name="root_path"
+              type="text"
+              required
+              .value=${proj?.root_path || ""}
+              placeholder="e.g. /workspace/projects/website-api"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="space-y-1">
+            <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Type Check Command</label>
+            <input
+              name="type_check_command"
+              type="text"
+              .value=${proj?.type_check_command || ""}
+              placeholder="e.g. tsc --noEmit"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Lint Command</label>
+            <input
+              name="lint_command"
+              type="text"
+              .value=${proj?.lint_command || ""}
+              placeholder="e.g. eslint . --fix"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Test Command</label>
+            <input
+              name="test_command"
+              type="text"
+              .value=${proj?.test_command || ""}
+              placeholder="e.g. vitest run"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2 border-t border-zinc-850">
+          <button
+            type="submit"
+            class="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-bold transition-all cursor-pointer"
+          >
+            ${isNew ? "Register Project" : "Save Updates"}
+          </button>
+          <button
+            type="button"
+            @click=${() => { this._editProjId = null; this.requestUpdate(); }}
+            class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs font-bold transition-all cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    `;
+  }
+
+    private handleProjectFormSubmit = (e: Event) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const name = (form.elements.namedItem("name") as HTMLInputElement).value;
+    const root_path = (form.elements.namedItem("root_path") as HTMLInputElement).value;
+    const type_check_command = (form.elements.namedItem("type_check_command") as HTMLInputElement).value || null;
+    const lint_command = (form.elements.namedItem("lint_command") as HTMLInputElement).value || null;
+    const test_command = (form.elements.namedItem("test_command") as HTMLInputElement).value || null;
+
+    const data = { name, root_path, type_check_command, lint_command, test_command };
+    const editProjId = this._editProjId;
+    const getErrorMessage = (err: unknown) => this.getErrorMessage(err);
+    
+    const finalize = () => {
+      this._editProjId = null;
+      this.requestUpdate();
+    };
+
+    runClientUnscoped(
+      Effect.gen(function* () {
+        if (editProjId === "new") {
+          yield* projectStore.createProject(data);
+        } else if (editProjId) {
+          yield* projectStore.updateProject(editProjId, data);
+        }
+        yield* Effect.sync(finalize);
+      }).pipe(
+        Effect.catchAll((err) =>
+          clientLog("error", `[GrugTaskBoard] Failed to save project registration: ${getErrorMessage(err)}`)
+        )
+      )
+    );
+  };
+
+  private handleDeleteProject(id: string) {
+    if (confirm("Are you sure you want to delete this project registration?")) {
+      runClientUnscoped(projectStore.deleteProject(id));
+    }
+  }
+
   override render() { 
     const tx = activeTxSignal.value;
     const error = errorSignal.value;
@@ -556,8 +869,17 @@ export class GrugTaskBoard extends LitElement {
                     </div>
 
                     <form @submit=${this.handleInitSubmit} class="space-y-4">
+                      <!-- Step 5 Active Project Workspace Selector -->
+                      ${this.renderProjectSelect()}
+
+                      <!-- Expandable Config Panel -->
+                      ${this.renderProjectConfig()}
+
                       <!-- Zag.js Workspace Directory Scoping -->
-                      ${this.renderSelect()}
+                      ${activeProjectSignal.value 
+                        ? this.renderSelect() 
+                        : html`<p class="text-xs text-zinc-400 italic bg-zinc-900/30 p-3 border border-zinc-850 rounded">⚠️ Please select or configure an Active Project Workspace first to enable subfolder scoping and task execution.</p>`
+                      }
 
                       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-1">
@@ -595,7 +917,8 @@ export class GrugTaskBoard extends LitElement {
 
                       <button 
                         type="submit" 
-                        class="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer"
+                        ?disabled=${!activeProjectSignal.value}
+                        class="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer disabled:bg-zinc-800 disabled:text-zinc-550 disabled:cursor-not-allowed"
                       >
                         Analyze Feature & Auto-Target
                       </button>
@@ -715,7 +1038,7 @@ export class GrugTaskBoard extends LitElement {
                 </div>
               </div>
             `}
-                </div>
-                   `;
-                   }
+      </div>
+    `;
+  }
 }

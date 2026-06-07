@@ -24,6 +24,19 @@ describe("CommandRunner - Execution and Spawner System", () => {
     expect(result.timedOut).toBe(false);
   });
 
+  it("should run custom commands when provided in runTypeCheck, runLintCheck and runTestSuite", async () => {
+    const runner = makeCommandRunner();
+    
+    const tcResult = await Effect.runPromise(runner.runTypeCheck(undefined, 10000, "echo tc-custom"));
+    expect(tcResult.success).toBe(true);
+
+    const lcResult = await Effect.runPromise(runner.runLintCheck(undefined, 10000, "echo lint-custom"));
+    expect(lcResult.success).toBe(true);
+
+    const tsResult = await Effect.runPromise(runner.runTestSuite(undefined, 10000, "echo test-custom"));
+    expect(tsResult.success).toBe(true);
+  });
+
   it("should enforce timeout budgets strictly and kill hung commands", async () => {
     const runner = makeCommandRunner();
     const runProgram = runner.run(

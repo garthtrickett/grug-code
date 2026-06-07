@@ -12,7 +12,6 @@ import { TokenEstimatorLive } from "../../lib/server/TokenEstimator.ts";
 import { effectPlugin } from "../middleware/effect-plugin.ts";
 import { PatchApplicationError } from "../../lib/server/AiderPatcher.ts";
 
-// Step 3 Integration Services
 import { ResearchLoop, ResearchLoopLive } from "../../features/agent/ResearchLoop.ts";
 import { ProjectStructureMapper, ProjectStructureMapperLive } from "../../features/agent/ProjectStructureMapper.ts";
 import { AiServiceLive } from "../../lib/server/AiService.ts";
@@ -34,7 +33,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .get("/progress", () => {
     return { progress: "Grug working hard..." };
   })
-    .get("/status", async ({ query, runEffect, set }) => {
+  .get("/status", async ({ query, runEffect, set }) => {
     const controller = makeWorkspaceController(query.cwd);
     const effect = controller.readTransactionState();
     const res = await runEffect(Effect.either(effect));
@@ -147,7 +146,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-    .post("/init", async ({ body, runEffect, set }) => {
+  .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.initTransaction(body.taskId, body.provider, body.tasks);
     const res = await runEffect(Effect.either(effect));
@@ -266,7 +265,9 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     const type = body.type;
     const effect = type === "typecheck" 
       ? runner.runTypeCheck(body.cwd, 30000) 
-      : runner.runTestSuite(body.cwd, 45000);
+      : type === "lint"
+        ? runner.runLintCheck(body.cwd, 30000)
+        : runner.runTestSuite(body.cwd, 45000);
     
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
@@ -277,7 +278,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   }, { 
     body: t.Object({
       tx: txSchema,
-      type: t.Union([t.Literal("typecheck"), t.Literal("test")]),
+      type: t.Union([t.Literal("typecheck"), t.Literal("lint"), t.Literal("test")]),
       cwd: t.Optional(t.String())
     })
   })
@@ -328,7 +329,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-    .post("/execute-step", async ({ body, runEffect, set }) => {
+  .post("/execute-step", async ({ body, runEffect, set }) => {
     const effect = Effect.flatMap(CorrectionLoop, (loop) =>
       loop.runStep({
         tx: body.tx,
@@ -372,11 +373,9 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       const mapper = yield* ProjectStructureMapper;
       const loop = yield* ResearchLoop;
 
-      // 1. Scan and index relative codebase path layout
       const projectStructure = yield* mapper.mapProject({ cwd: body.cwd });
       yield* Effect.logInfo("[WorkspaceRoute] ProjectStructureMapper.mapProject completed successfully.");
 
-      // 2. Dispatch prompts and execute multi-turn exploration sequence
       const result = yield* loop.run({
         userPrompt: body.userPrompt,
         projectStructure,
