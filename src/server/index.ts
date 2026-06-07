@@ -130,12 +130,66 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
       }
     } as unknown as ServerResponse;
 
-    const mockReq = {} as unknown as IncomingMessage;
-    await transport.handlePostMessage(mockReq, mockRes, body);
+    const mockReq = {
+      headers: {
+        "content-type": "application/json",
+      },
+    } as unknown as IncomingMessage;
 
-    set.status = statusCode;
+    let lastSentMessage: unknown = null;
+    let resolveMessage: ((msg: unknown) => void) | null = null;
+    const messagePromise = new Promise<unknown>((resolve) => {
+      resolveMessage = resolve;
+    });
+
+    const originalSend = transport.send ? transport.send.bind(transport) : undefined;
+    if (originalSend) {
+      transport.send = async (message: unknown) => {
+        lastSentMessage = message;
+        if (resolveMessage) {
+          resolveMessage(message);
+        }
+        return originalSend(message as Parameters<SSEServerTransport['send']>[0]);
+      };
+    }
+    
+    try {
+      console.info(`[mcpRoutes /messages] Routing message to transport.handlePostMessage for session: ${sessionId}`);
+      await transport.handlePostMessage(mockReq, mockRes, body);
+      console.info(`[mcpRoutes /messages] handlePostMessage finished. Status: ${statusCode}`);
+      
+      // Wait for up to 150ms to capture any asynchronous response generated via transport.send
+      if (!lastSentMessage) {
+        await Promise.race([
+          messagePromise,
+          new Promise((resolve) => setTimeout(resolve, 150))
+        ]);
+      }
+    } catch (err) {
+      console.error(`[mcpRoutes /messages] Critical error in handlePostMessage:`, err);
+      if (originalSend) {
+        transport.send = originalSend;
+      }
+      set.status = 500;
+      return { error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (originalSend) {
+        transport.send = originalSend;
+      }
+    }
+
+    if (lastSentMessage) {
+      set.status = 200;
+      return lastSentMessage;
+    }
+
+    set.status = statusCode === 202 ? 200 : statusCode;
     if (responseBody) {
-      return JSON.parse(responseBody) as unknown;
+      try {
+        return JSON.parse(responseBody) as unknown;
+      } catch {
+        return responseBody;
+      }
     }
     return "";
   }, {

@@ -260,6 +260,23 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       }
     });
 
+    child.stdout.on("data", (chunk: unknown) => {
+      const text = Buffer.isBuffer(chunk)
+        ? chunk.toString("utf-8")
+        : typeof chunk === "string"
+          ? chunk
+          : String(chunk);
+      console.info(`[Child Daemon STDOUT] ${text}`);
+    });
+    child.stderr.on("data", (chunk: unknown) => {
+      const text = Buffer.isBuffer(chunk)
+        ? chunk.toString("utf-8")
+        : typeof chunk === "string"
+          ? chunk
+          : String(chunk);
+      console.error(`[Child Daemon STDERR] ${text}`);
+    });
+
     // Wait for the socket file to be created on disk by Elysia UDS startup
     let exists = false;
     for (let i = 0; i < 40; i++) {
@@ -321,6 +338,11 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
             body: JSON.stringify(initializeRequest),
           });
 
+          if (initPostResponse.status !== 200) {
+            console.error(`[E2E UDS Test] initPostResponse failed! Status: ${initPostResponse.status}`);
+            console.error(`[E2E UDS Test] Response body: ${await initPostResponse.text()}`);
+          }
+
           expect(initPostResponse.status).toBe(200);
           const initResult = (await initPostResponse.json()) as McpResponse;
           expect(initResult.jsonrpc).toBe("2.0");
@@ -347,6 +369,11 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
             },
             body: JSON.stringify(callToolsRequest),
           });
+
+          if (callPostResponse.status !== 200) {
+            console.error(`[E2E UDS Test] callPostResponse failed! Status: ${callPostResponse.status}`);
+            console.error(`[E2E UDS Test] Response body: ${await callPostResponse.text()}`);
+          }
 
           expect(callPostResponse.status).toBe(200);
           const toolResult = (await callPostResponse.json()) as McpResponse;

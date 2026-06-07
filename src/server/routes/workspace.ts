@@ -330,6 +330,32 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
+  .post("/verify", async ({ body, runEffect, set }) => {
+    const controller = makeWorkspaceController(body.cwd);
+    let effect;
+    if (body.type === "typecheck") {
+      effect = controller.runTypeCheck(body.tx);
+    } else if (body.type === "lint") {
+      effect = controller.runLintCheck(body.tx);
+    } else if (body.type === "test") {
+      effect = controller.runTestSuite(body.tx);
+    } else {
+      set.status = 400;
+      return { error: "Invalid verification type" };
+    }
+    const res = await runEffect(Effect.either(effect));
+    if (res._tag === "Left") {
+      set.status = 400;
+      return { error: (res.left).message };
+    }
+    return res.right;
+  }, {
+    body: t.Object({
+      tx: txSchema,
+      type: t.Union([t.Literal("typecheck"), t.Literal("lint"), t.Literal("test")]),
+      cwd: t.Optional(t.String())
+    })
+  })
   .post("/execute-step", async ({ body, runEffect, set }) => {
     const effect = Effect.flatMap(CorrectionLoop, (loop) =>
       loop.runStep({

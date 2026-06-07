@@ -103,7 +103,7 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
     );
 
     expect(initResponse.status).toBe(200);
-    const tx = await initResponse.json();
+    const tx = await initResponse.json() as any;
     expect(tx.ephemeralBranch).toBe("grug-task/api-patch-task-id");
     expect(tx.provider).toBe("openai");
 
@@ -136,7 +136,7 @@ Patched via REST API.
     );
 
     expect(patchResponse.status).toBe(200);
-    const patchResult = await patchResponse.json();
+    const patchResult = await patchResponse.json() as any;
     expect(patchResult.success).toBe(true);
 
     const content = await fs.readFile(path.join(tempDir, "initial.txt"), "utf-8");
@@ -181,7 +181,7 @@ Patched via REST API.
         },
         body: JSON.stringify({
           tx,
-          patch: {
+                    patch: {
             summary: "Mismatched update",
             files: [
               {
@@ -195,7 +195,7 @@ Patched via REST API.
     );
 
     expect(patchResponse.status).toBe(400);
-    const result = await patchResponse.json();
+    const result = await patchResponse.json() as any;
 
     expect(result.error).toContain("failed to match");
     expect(result.filePath).toBe("initial.txt");
@@ -262,7 +262,7 @@ export function hello(name: string): string {
     );
 
     expect(skeletonsResponse.status).toBe(200);
-    const result = await skeletonsResponse.json();
+    const result = await skeletonsResponse.json() as any;
     
     expect(result.length).toBe(1);
     expect(result[0].filePath).toBe("hello.ts");
@@ -404,7 +404,7 @@ export function hello(name: string): string {
       );
 
       expect(executeResponse.status).toBe(200);
-      const updatedTx = await executeResponse.json();
+      const updatedTx = await executeResponse.json() as any;
       expect(updatedTx.checkpoints.length).toBe(1);
 
       // Re-read file to verify final edits are written to disk
@@ -470,6 +470,55 @@ export function hello(name: string): string {
     expect(result.status).toBe("discussion");
     expect(result.discussionText).toBe("Grug has analyzed your codebase. Let's discuss Option A vs Option B.");
     expect(result.suggestedOptions).toEqual(["Compare Option A and B", "Go straight to Option A"]);
+  });
+
+  it("should support verifying compilation/typecheck status programmatically via POST /verify", async () => {
+    const token = getActiveToken();
+
+    const initResponse = await app.handle(
+      new Request("http://localhost/api/workspace/init", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ taskId: "api-verify-task-id", cwd: tempDir }),
+      })
+    );
+    expect(initResponse.status).toBe(200);
+    const tx = await initResponse.json() as any;
+
+    const verifyResponse = await app.handle(
+      new Request("http://localhost/api/workspace/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          tx,
+          type: "typecheck",
+          cwd: tempDir,
+        }),
+      })
+    );
+
+    expect(verifyResponse.status).toBe(200);
+    const verification = await verifyResponse.json() as any;
+    expect(verification.success).toBe(true);
+    expect(verification.dirtyFiles).toEqual([]);
+
+    // Clean up transaction
+    await app.handle(
+      new Request("http://localhost/api/workspace/abort", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ tx, cwd: tempDir }),
+      })
+    );
   });
 
   it("should return the authoritative active transaction state on GET /api/workspace/status", async () => {
@@ -539,7 +588,7 @@ export function hello(name: string): string {
     );
   });
 
-        it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
+  it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
     const testSocketPath = path.resolve(`/tmp/grug-test-sse-${crypto.randomUUID()}.sock`);
     console.info("[Test:SSE] Starting test with socket path:", testSocketPath);
     
@@ -562,7 +611,7 @@ export function hello(name: string): string {
     const originalSocketPath = config.surgical.socketPath;
     config.surgical.socketPath = testSocketPath;
 
-        // Start UDS server
+    // Start UDS server
     console.info("[Test:SSE] Starting UDS server...");
     const serverUds = udsApp.listen({ unix: testSocketPath })
     expect(serverUds.server).toBeDefined();
@@ -606,7 +655,7 @@ export function hello(name: string): string {
           reader.cancel().catch(() => {});
         }, 3000);
 
-                console.info("[Test:SSE] Starting stream read loop...");
+        console.info("[Test:SSE] Starting stream read loop...");
         while (!streamClosed) {
           console.info("[Test:SSE] Awaiting reader.read()...");
           const { value, done } = await reader.read();
