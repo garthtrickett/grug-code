@@ -539,8 +539,8 @@ export function hello(name: string): string {
     );
   });
 
-  it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
-    const testSocketPath = path.resolve(`/tmp/grug-test-sse-\${crypto.randomUUID()}.sock`);
+    it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
+    const testSocketPath = path.resolve(`/tmp/grug-test-sse-${crypto.randomUUID()}.sock`);
     
     // Prepare directory and clean up stale test socket files
     try {
