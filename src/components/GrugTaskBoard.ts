@@ -663,15 +663,26 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-    private handleProjectFormSubmit = (e: Event) => {
+      private handleProjectFormSubmit = (e: Event) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
-            const name = (form.elements.namedItem("name") as HTMLInputElement).value;
-        const root_path = (form.elements.namedItem("root_path") as HTMLInputElement).value;
-    const type_check_command = (form.elements.namedItem("type_check_command") as HTMLInputElement).value || null;
-    const lint_command = (form.elements.namedItem("lint_command") as HTMLInputElement).value || null;
-    const test_command = (form.elements.namedItem("test_command") as HTMLInputElement).value || null;
-    const startup_command = (form.elements.namedItem("startup_command") as HTMLInputElement).value || null;
+    
+    const getVal = (name: string): string => {
+      try {
+        const el = (form.elements?.namedItem(name) || form.querySelector(`[name='${name}']`)) as HTMLInputElement | null;
+        return el ? el.value : "";
+      } catch {
+        const el = form.querySelector(`[name='${name}']`) as HTMLInputElement | null;
+        return el ? el.value : "";
+      }
+    };
+
+    const name = getVal("name");
+    const root_path = getVal("root_path");
+    const type_check_command = getVal("type_check_command") || null;
+    const lint_command = getVal("lint_command") || null;
+    const test_command = getVal("test_command") || null;
+    const startup_command = getVal("startup_command") || null;
 
     const data = { name, root_path, type_check_command, lint_command, test_command, startup_command };
     const editProjId = this._editProjId;
