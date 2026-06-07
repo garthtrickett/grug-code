@@ -539,8 +539,9 @@ export function hello(name: string): string {
     );
   });
 
-    it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
+        it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
     const testSocketPath = path.resolve(`/tmp/grug-test-sse-${crypto.randomUUID()}.sock`);
+    console.info("[Test:SSE] Starting test with socket path:", testSocketPath);
     
     // Prepare directory and clean up stale test socket files
     try {
@@ -562,12 +563,14 @@ export function hello(name: string): string {
     config.surgical.socketPath = testSocketPath;
 
         // Start UDS server
+    console.info("[Test:SSE] Starting UDS server...");
     const serverUds = udsApp.listen({ unix: testSocketPath })
     expect(serverUds.server).toBeDefined();
 
     try {
       // Connect to UDS server SSE stream via Bun's UDS fetch support
       const token = getActiveToken();
+      console.info("[Test:SSE] Sending fetch request to /api/workspace/stream-progress...");
       const response = await fetch("http://localhost/api/workspace/stream-progress", {
         unix: testSocketPath,
         headers: {
@@ -575,9 +578,11 @@ export function hello(name: string): string {
         }
       });
 
+      console.info("[Test:SSE] Fetch completed. Status:", response.status, "Content-Type:", response.headers.get("Content-Type"));
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toContain("text/event-stream");
 
+      console.info("[Test:SSE] Acquiring stream reader...");
       const reader = response.body?.getReader();
       expect(reader).toBeDefined();
 
@@ -585,7 +590,9 @@ export function hello(name: string): string {
         // Emit a mock progress update
         const { progressBroadcaster } = await import("../../lib/server/WorkspaceController");
         
+        console.info("[Test:SSE] Setting timeout to emit progress broadcast in 100ms...");
         setTimeout(() => {
+          console.info("[Test:SSE] Emitting progress broadcast: Grug-SSE-Handshake-Success");
           progressBroadcaster.emit("progress", "Grug-SSE-Handshake-Success");
         }, 100);
 
@@ -593,19 +600,26 @@ export function hello(name: string): string {
         let streamClosed = false;
         let receivedText = "";
         
+        console.info("[Test:SSE] Setting timeout of 3s to cancel stream reader if no data is received...");
         const timeoutId = setTimeout(() => {
+          console.warn("[Test:SSE] Reader timeout reached! Canceling reader.");
           reader.cancel().catch(() => {});
         }, 3000);
 
+        console.info("[Test:SSE] Starting stream read loop...");
         while (!streamClosed) {
+          console.info("[Test:SSE] Awaiting reader.read()...");
           const { value, done } = await reader.read();
           if (done) {
+            console.info("[Test:SSE] Reader returned done=true");
             streamClosed = true;
             break;
           }
           const chunk = new TextDecoder().decode(value);
+          console.info("[Test:SSE] Chunk read from reader: " + chunk);
           receivedText += chunk;
           if (receivedText.includes("Grug-SSE-Handshake-Success")) {
+            console.info("[Test:SSE] Success string found in stream text. Breaking read loop!");
             break;
           }
         }
@@ -615,6 +629,7 @@ export function hello(name: string): string {
       }
     } finally {
       // Clean up server and restore original socket path config
+      console.info("[Test:SSE] Teardown: Stopping UDS server...");
       await serverUds.stop();
       config.surgical.socketPath = originalSocketPath;
       try {
@@ -622,6 +637,7 @@ export function hello(name: string): string {
           await fs.unlink(testSocketPath);
         }
       } catch {}
+      console.info("[Test:SSE] Teardown complete.");
     }
   });
 });

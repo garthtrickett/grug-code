@@ -16,14 +16,14 @@ class MockGlob {
   scan(_options?: unknown): AsyncIterable<string> {
     return {
       [Symbol.asyncIterator]() {
-        return {
+        return { 
           next(): Promise<IteratorResult<string>> {
             return Promise.resolve({ done: true, value: undefined as unknown as string });
           }
         };
       }
     };
-  }
+  } 
   match(_path: string): boolean {
     return false;
   }
@@ -85,26 +85,38 @@ const mockBun = {
           body: req.method !== "GET" && req.method !== "HEAD" ? body : undefined,
         });
 
-        const fetchHandler = state.opts.fetch;
+        const fetchHandler = state.opts.fetch; 
         if (fetchHandler) {
+          console.info("[mockBun.serve] Dispatching request to Elysia: " + req.method + " " + url.pathname);
           fetchHandler(webReq)
             .then(async (webRes) => {
+              console.info("[mockBun.serve] Elysia returned response: status=" + webRes.status + " for " + url.pathname);
               res.statusCode = webRes.status;
               webRes.headers.forEach((value, key) => {
                 res.setHeader(key, value);
               });
 
+              // Flush status and headers immediately to avoid buffering/deadlock on streaming responses
+              console.info("[mockBun.serve] Flushing status & headers to socket for " + url.pathname);
+              res.writeHead(webRes.status);
+
               if (webRes.body) {
                 const reader = webRes.body.getReader();
                 while (true) {
                   const { done, value } = await reader.read();
-                  if (done) break;
+                  if (done) {
+                    console.info("[mockBun.serve] Body stream reader done for " + url.pathname);
+                    break;
+                  }
+                  console.info("[mockBun.serve] Writing " + value.length + " bytes of chunk to socket for " + url.pathname);
                   res.write(value);
                 }
               }
+              console.info("[mockBun.serve] Closing response connection for " + url.pathname);
               res.end();
             })
             .catch((err: Error) => {
+              console.error("[mockBun.serve] Elysia handler threw error for " + url.pathname, err);
               const errorHandler = state.opts.error;
               if (errorHandler) {
                 errorHandler(err);
@@ -112,7 +124,8 @@ const mockBun = {
               res.statusCode = 500;
               res.end(err.message);
             });
-        } else {
+        } else { 
+          console.warn("[mockBun.serve] No fetch handler configured on mock server");
           res.statusCode = 500;
           res.end("No fetch handler configured on mock server");
         }
@@ -191,6 +204,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
   if (init && init.unix) {
     const urlString = getUrlString(input);
     const url = new URL(urlString);
+    console.info("[customFetch] Intercepted UNIX socket request to: " + url.pathname + " via socket: " + init.unix);
     return new Promise<Response>((resolve, reject) => {
       const req = http.request({
         socketPath: init.unix,
@@ -198,13 +212,14 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
         method: init.method || "GET",
         headers: init.headers as Record<string, string>,
       }, (res) => {
+        console.info("[customFetch] Received response metadata from socket. Status: " + res.statusCode + ", Content-Type: " + (res.headers["content-type"] || "none") + " for " + url.pathname);
         const responseHeaders = new Headers();
         for (const [key, value] of Object.entries(res.headers)) {
           if (value !== undefined) {
             if (Array.isArray(value)) {
               for (const v of value) {
                 responseHeaders.append(key, v);
-              } 
+              }
             } else {
               responseHeaders.append(key, value);
             }
@@ -215,19 +230,24 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
         const isEventStream = contentType.includes("text/event-stream");
 
         if (isEventStream) {
+          console.info("[customFetch] Detected Event Stream (SSE). Resolving Response immediately to enable streaming read.");
           const bodyStream = new ReadableStream<Uint8Array>({
             start(controller) {
               res.on("data", (chunk: Uint8Array) => {
+                console.info("[customFetch] SSE chunk received: size=" + chunk.length + " for " + url.pathname);
                 controller.enqueue(new Uint8Array(chunk));
               });
               res.on("end", () => {
+                console.info("[customFetch] SSE stream ended for " + url.pathname);
                 controller.close();
               });
               res.on("error", (err) => {
+                console.error("[customFetch] SSE stream error for " + url.pathname, err);
                 controller.error(err);
               });
             },
             cancel() {
+              console.info("[customFetch] SSE stream canceled by client for " + url.pathname);
               res.destroy();
             }
           });
@@ -242,10 +262,12 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
           return;
         }
 
+        console.info("[customFetch] Standard request detected. Buffering entire response for " + url.pathname);
         const chunks: Uint8Array[] = [];
         res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
         res.on("end", () => {
           const body = Buffer.concat(chunks);
+          console.info("[customFetch] Buffering complete for standard request. Resolved Response with size=" + body.length + " for " + url.pathname);
           const response = new Response(body, {
             status: res.statusCode,
             statusText: res.statusMessage,
@@ -253,7 +275,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
           });
 
           Object.defineProperty(response, "body", {
-            get() {
+            get() { 
               return new ReadableStream<Uint8Array>({
                 start(controller) {
                   controller.enqueue(new Uint8Array(body));
@@ -267,7 +289,10 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix
           resolve(response);
         });
       });
-      req.on("error", reject);
+      req.on("error", (err) => {
+        console.error("[customFetch] UNIX socket request failed for " + url.pathname, err);
+        reject(err);
+      });
       if (init.body) {
         req.write(safeStringifyBody(init.body));
       }
