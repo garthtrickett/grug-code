@@ -5,6 +5,7 @@ import type { default as UserTable } from './User';
 import type { default as SyncEpochTable } from './SyncEpoch';
 import type { default as UserPreferenceTable } from './UserPreference';
 import type { default as PlatformAdminTable } from './PlatformAdmin';
+import type { default as ProjectTable } from './Project';
 
 export default interface PublicSchema {
   user: UserTable;
@@ -14,4 +15,6 @@ export default interface PublicSchema {
   user_preference: UserPreferenceTable;
 
   platform_admin: PlatformAdminTable;
+
+  project: ProjectTable;
 }
