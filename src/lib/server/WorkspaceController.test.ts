@@ -195,7 +195,7 @@ Grug applied patch success.
     expect(existsAfterAbort).toBe(false);
   });
 
-  it("should execute project-specific commands if a registered project matches root_path === cwd", async () => {
+    it("should execute project-specific commands if a registered project matches root_path === cwd", async () => {
     const absoluteTempDir = path.resolve(tempDir);
     const projectId = crypto.randomUUID() as ProjectId;
 
@@ -212,6 +212,38 @@ Grug applied patch success.
 
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-custom-commands"));
+
+    const tcResult = await Effect.runPromise(controller.runTypeCheck(tx));
+    expect(tcResult.success).toBe(true);
+
+    const lcResult = await Effect.runPromise(controller.runLintCheck(tx));
+    expect(lcResult.success).toBe(true);
+
+    const tsResult = await Effect.runPromise(controller.runTestSuite(tx));
+    expect(tsResult.success).toBe(true);
+
+    await db.deleteFrom("project").where("id", "=", projectId).execute();
+    await Effect.runPromise(controller.abortTransaction(tx));
+  });
+
+  it("should execute commands using startup_command if defined on matching project", async () => {
+    const absoluteTempDir = path.resolve(tempDir);
+    const projectId = crypto.randomUUID() as ProjectId;
+
+    await db.insertInto("project")
+      .values({
+        id: projectId,
+        name: "Mock Startup Command Project",
+        root_path: absoluteTempDir,
+        type_check_command: "-e console.log('startup-typecheck-success')",
+        lint_command: "-e console.log('startup-lint-success')",
+        test_command: "-e console.log('startup-test-success')",
+        startup_command: "bun"
+      })
+      .execute();
+
+    const controller = makeWorkspaceController(tempDir);
+    const tx = await Effect.runPromise(controller.initTransaction("task-startup-command-verify"));
 
     const tcResult = await Effect.runPromise(controller.runTypeCheck(tx));
     expect(tcResult.success).toBe(true);

@@ -3,7 +3,33 @@ import { Effect } from "effect";
 import { makeCommandRunner, parseTscErrors, parseTestFailures } from "./CommandRunner";
 
 describe("CommandRunner - Execution and Spawner System", () => {
-  it("should execute clean inline shell tasks successfully", async () => {
+  it("should correctly prefix and wrap commands when startupCommand is provided", async () => {
+    const runner = makeCommandRunner();
+    const bunProgram = runner.run(
+      ["-e", "console.log('bun-wrapped')"],
+      { startupCommand: "bun" }
+    );
+    const bunResult = await Effect.runPromise(bunProgram);
+    expect(bunResult.success).toBe(true);
+    expect(bunResult.stdout.trim()).toBe("bun-wrapped");
+  });
+
+  it("should construct nix develop wrapper args correctly", async () => {
+    const runner = makeCommandRunner();
+    const nixProgram = runner.run(
+      ["bun", "-e", "console.log('nix-wrapped')"],
+      { startupCommand: "nix develop" }
+    );
+    const result = await Effect.runPromise(Effect.either(nixProgram));
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("nix develop");
+      expect(result.left.message).toContain("-c");
+    } else {
+      expect(result.right).toBeDefined();
+    }
+  });
+
+  it("should execute clean inline shell tasks successfully", async () => Packs => {}
     const runner = makeCommandRunner();
     const runProgram = runner.run(["bun", "-e", "console.log('hello world')"]);
 

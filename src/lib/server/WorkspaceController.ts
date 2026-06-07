@@ -54,14 +54,35 @@ export interface WorkspaceController {
   readonly readTransactionState: () => Effect.Effect<{ readonly tx: GitTransaction; readonly tasks: readonly PlanTask[] } | null, Error>;
 }
 
-const runCommand = (args: string[], cwd?: string, env?: Record<string, string>) =>
+const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, startupCommand?: string | null) =>
   Effect.tryPromise({
     try: () => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
-      const [command, ...cmdArgs] = args;
+      let [command, ...cmdArgs] = args;
       if (!command) {
         return reject(new Error("No command provided"));
       }
-      const child = spawn(command, cmdArgs, { 
+
+      if (startupCommand) {
+        const startupArgs = parseCommandString(startupCommand);
+        if (startupArgs.length > 0) {
+          const startupHead = startupArgs[0]!;
+          const startupTail = startupArgs.slice(1);
+          const isNixDevelop = startupHead === "nix" && startupTail[0] === "develop";
+          if (isNixDevelop) {
+            const hasCommandFlag = startupTail.includes("-c") || startupTail.includes("--command");
+            if (hasCommandFlag) {
+              cmdArgs = [...startupTail, command, ...cmdArgs];
+            } else {
+              cmdArgs = [...startupTail, "-c", command, ...cmdArgs];
+            }
+          } else {
+            cmdArgs = [...startupTail, command, ...cmdArgs];
+          }
+          command = startupHead;
+        }
+      }
+
+      const child = spawn(command, cmdArgs, {
         cwd,
         env: { ...process.env, ...env }
       });
@@ -239,16 +260,16 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),
 
-    runTypeCheck: (_tx: GitTransaction) =>
+        runTypeCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_start" }));
         
         const proj = yield* getProject();
-        const cmd = proj && proj.type_check_command 
-          ? parseCommandString(proj.type_check_command) 
+        const cmd = proj && proj.type_check_command
+          ? parseCommandString(proj.type_check_command)
           : ["bun", "x", "tsc", "--noEmit"];
-        const result = yield* runCommand(cmd, cwd);
+        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
@@ -267,7 +288,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runLintCheck: (_tx: GitTransaction) =>
+        runLintCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_start" }));
@@ -278,7 +299,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           return { success: true, dirtyFiles: [] };
         }
         const cmd = parseCommandString(proj.lint_command);
-        const result = yield* runCommand(cmd, cwd);
+        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
@@ -297,16 +318,16 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runTestSuite: (_tx: GitTransaction) =>
+        runTestSuite: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_start" }));
         
         const proj = yield* getProject();
-        const cmd = proj && proj.test_command 
-          ? parseCommandString(proj.test_command) 
+        const cmd = proj && proj.test_command
+          ? parseCommandString(proj.test_command)
           : ["bun", "run", "test"];
-        const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" });
+        const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" }, proj?.startup_command);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
