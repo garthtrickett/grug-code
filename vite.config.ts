@@ -112,11 +112,15 @@ export default defineConfig(({ command, mode }) => ({
       "/api": {
         target: `http://127.0.0.1:${process.env.BACKEND_PORT || "42069"}`,
         changeOrigin: true,
+        timeout: 120000, // 2-minute request timeout limit
+        proxyTimeout: 120000, // 2-minute connection timeout limit
       },
       "/ws": {
         target: `ws://127.0.0.1:${process.env.BACKEND_PORT || "42069"}`,
         ws: true,
         changeOrigin: true,
+        timeout: 120000,
+        proxyTimeout: 120000,
       }
     }
   }

@@ -35,6 +35,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     set.headers["Cache-Control"] = "no-cache";
     set.headers["Connection"] = "keep-alive";
 
+    let cleanupFn: (() => void) | null = null;
+
     const stream = new ReadableStream({
       start(controller) {
         const listener = (data: string) => {
@@ -51,15 +53,14 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
           } catch {}
         }, 5000);
 
-        (controller as unknown as { _cleanup: () => void })._cleanup = () => {
+        cleanupFn = () => {
           clearInterval(interval);
           progressBroadcaster.off("progress", listener);
         };
       },
-      cancel(controller) {
-        const cleanup = (controller as unknown as { _cleanup?: () => void })._cleanup;
-        if (cleanup) {
-          cleanup();
+      cancel() {
+        if (cleanupFn) {
+          cleanupFn();
         }
       }
     });

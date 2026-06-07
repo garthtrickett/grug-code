@@ -70,23 +70,24 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
     set.headers["Cache-Control"] = "no-cache";
     set.headers["Connection"] = "keep-alive";
 
+    let activeTransport: SSEServerTransport | null = null;
+
     const stream = new ReadableStream({
       async start(controller) {
         const mockRes = new ElysiaMockResponse(controller as ReadableStreamDefaultController<string>);
         const transport = new SSEServerTransport("/api/mcp/messages", mockRes);
         
         mcpTransports.set(transport.sessionId, transport);
-        (controller as unknown as { _transport: SSEServerTransport })._transport = transport;
+        activeTransport = transport;
 
         const { mcpServer } = await import("../lib/server/mcp/McpServer.ts");
         await mcpServer.connect(transport);
       },
-      cancel(controller) {
-        const transport = (controller as unknown as { _transport?: SSEServerTransport })._transport;
-        if (transport) {
+      cancel() {
+        if (activeTransport) {
           try {
-            mcpTransports.delete(transport.sessionId);
-            void transport.close();
+            mcpTransports.delete(activeTransport.sessionId);
+            void activeTransport.close();
           } catch {}
         }
       }
