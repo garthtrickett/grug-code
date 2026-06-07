@@ -28,9 +28,8 @@ export const effectPlugin = (app: Elysia) => app.derive(
   { as: "global" },
   ({ request }) => {
     return {
-      runEffect: <A, E>(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        effect: Effect.Effect<A, E, any>,
+            runEffect: <A, E, R>(
+        effect: Effect.Effect<A, E, R>,
         options?: { name?: string; attributes?: Record<string, unknown> },
       ): Promise<A> => {
         const method = request.method;
@@ -58,7 +57,7 @@ export const effectPlugin = (app: Elysia) => app.derive(
         );
 
         return serverRuntime.runPromise(
-          instrumentedEffect as unknown as Effect.Effect<A, E, never>,
+          instrumentedEffect,
         );
       },
     };
