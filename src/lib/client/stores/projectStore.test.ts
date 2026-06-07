@@ -127,12 +127,13 @@ describe("projectStore - Client Preact Signals Store", () => {
       });
     }) as any;
 
-    const result = await runClientPromise(projectStore.createProject({
+        const result = await runClientPromise(projectStore.createProject({
       name: "New Project",
       root_path: "/work/new",
       type_check_command: null,
       lint_command: null,
       test_command: null,
+      startup_command: null,
     }));
 
     expect(result).toEqual(created);
@@ -190,12 +191,13 @@ describe("projectStore - Client Preact Signals Store", () => {
       });
     }) as any;
 
-    const result = await runClientPromise(projectStore.updateProject("p-update", {
+        const result = await runClientPromise(projectStore.updateProject("p-update", {
       name: "Updated Name",
       root_path: "/work/up",
       type_check_command: "bun x tsc",
       lint_command: null,
       test_command: null,
+      startup_command: "nix develop",
     }));
 
     expect(result).toEqual(updated);

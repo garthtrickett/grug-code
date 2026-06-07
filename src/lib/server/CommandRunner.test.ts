@@ -29,7 +29,7 @@ describe("CommandRunner - Execution and Spawner System", () => {
     }
   });
 
-  it("should execute clean inline shell tasks successfully", async () => Packs => {}
+  it("should execute clean inline shell tasks successfully", async () => {
     const runner = makeCommandRunner();
     const runProgram = runner.run(["bun", "-e", "console.log('hello world')"]);
 
@@ -138,7 +138,7 @@ FAIL  tests/e2e/dictionary-lookup.spec.ts
     expect(testSuiteResult.success).toBe(true);
   });
 
-    it("should execute multiple parallel test suites without port collision", async () => {
+  it("should execute multiple parallel test suites without port collision", async () => {
     const runner = makeCommandRunner();
     const parallelRuns = Array.from({ length: 4 }).map(() =>
       runner.runTestSuite(undefined, 15000, "bun -e console.log(process.env.PORT)")

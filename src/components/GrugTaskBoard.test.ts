@@ -21,6 +21,7 @@ if (typeof globalThis.crypto === "undefined" || !globalThis.crypto.randomUUID) {
 
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from "vitest";
+import { projectStore } from "../lib/client/stores/projectStore.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
