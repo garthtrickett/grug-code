@@ -41,8 +41,22 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
     await execPromise("git config user.email 'api@test.com'", { cwd: tempDir });
     await execPromise("git config commit.gpgSign false", { cwd: tempDir });
 
-    await fs.writeFile(path.join(tempDir, "initial.txt"), "Original codebase line.\n");
-    await execPromise("git add initial.txt", { cwd: tempDir });
+        await fs.writeFile(path.join(tempDir, "initial.txt"), "Original codebase line.\n");
+    await fs.writeFile(path.join(tempDir, "main.ts"), "const x: number = 10;\nconsole.log(x);\n");
+    await fs.writeFile(
+      path.join(tempDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          target: "es2022",
+          moduleResolution: "node",
+          skipLibCheck: true,
+          noEmit: true
+        },
+        include: ["main.ts"]
+      }, null, 2)
+    );
+    await execPromise("git add .", { cwd: tempDir });
     await execPromise("git commit -m 'initial api commit'", { cwd: tempDir });
 
     process.chdir(tempDir);
