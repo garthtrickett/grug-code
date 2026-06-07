@@ -11,11 +11,12 @@ describe("Project Database Schema and Migration", () => {
       .insertInto("project")
       .values({
         id: projectId,
-        name: "Grug Code Test Project",
+                name: "Grug Code Test Project",
         root_path: "/workspace/grug-code-test-project",
         type_check_command: "tsc --noEmit",
         lint_command: "eslint .",
         test_command: "vitest run",
+        startup_command: "nix develop",
       })
       .executeTakeFirst();
 
@@ -34,6 +35,7 @@ describe("Project Database Schema and Migration", () => {
     expect(project?.type_check_command).toBe("tsc --noEmit");
     expect(project?.lint_command).toBe("eslint .");
     expect(project?.test_command).toBe("vitest run");
+    expect(project?.startup_command).toBe("nix develop");
     expect(project?.created_at).toBeInstanceOf(Date);
     expect(project?.updated_at).toBeInstanceOf(Date);
 
@@ -43,6 +45,7 @@ describe("Project Database Schema and Migration", () => {
       .set({
         name: "Grug Code Updated Project",
         test_command: "vitest run --coverage",
+        startup_command: "nix develop --command",
         updated_at: new Date(),
       })
       .where("id", "=", projectId)

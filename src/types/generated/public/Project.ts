@@ -18,7 +18,9 @@ export default interface ProjectTable {
 
   lint_command: ColumnType<string | null, string | null, string | null>;
 
-  test_command: ColumnType<string | null, string | null, string | null>;
+    test_command: ColumnType<string | null, string | null, string | null>;
+
+  startup_command: ColumnType<string | null, string | null, string | null>;
 
   created_at: ColumnType<Date, Date | string | undefined, Date | string>;
 
