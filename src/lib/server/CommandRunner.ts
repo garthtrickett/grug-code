@@ -9,6 +9,7 @@ export interface CommandOptions {
   readonly cwd?: string;
   readonly timeoutMs?: number;
   readonly env?: Record<string, string>;
+  readonly startupCommand?: string;
 }
 
 export interface CommandResult {
@@ -21,9 +22,9 @@ export interface CommandResult {
 
 export interface CommandRunner {
   readonly run: (args: string[], options?: CommandOptions) => Effect.Effect<CommandResult, Error>;
-  readonly runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) => Effect.Effect<VerificationResult, Error>;
-  readonly runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) => Effect.Effect<VerificationResult, Error>;
-  readonly runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string) => Effect.Effect<VerificationResult, Error>;
+  readonly runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) => Effect.Effect<VerificationResult, Error>;
+  readonly runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) => Effect.Effect<VerificationResult, Error>;
+  readonly runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) => Effect.Effect<VerificationResult, Error>;
 }
 
 export const parseTscErrors = (output: string): readonly string[] => {
@@ -106,12 +107,32 @@ const getDirtyFilesFromGit = (cwd?: string) =>
 export const makeCommandRunner = (): CommandRunner => {
   const run = (args: string[], options?: CommandOptions) =>
     Effect.gen(function* () {
-      yield* Effect.logInfo(`[CommandRunner] Spawning subprocess: ${args.join(" ")}`);
-
-      const [command, ...cmdArgs] = args;
+      let [command, ...cmdArgs] = args;
       if (!command) {
         return yield* Effect.fail(new Error("No command provided"));
       }
+
+      if (options?.startupCommand) {
+        const startupArgs = parseCommandString(options.startupCommand);
+        if (startupArgs.length > 0) {
+          const startupHead = startupArgs[0]!;
+          const startupTail = startupArgs.slice(1);
+          const isNixDevelop = startupHead === "nix" && startupTail[0] === "develop";
+          if (isNixDevelop) {
+            const hasCommandFlag = startupTail.includes("-c") || startupTail.includes("--command");
+            if (hasCommandFlag) {
+              cmdArgs = [...startupTail, command, ...cmdArgs];
+            } else {
+              cmdArgs = [...startupTail, "-c", command, ...cmdArgs];
+            }
+          } else {
+            cmdArgs = [...startupTail, command, ...cmdArgs];
+          }
+          command = startupHead;
+        }
+      }
+
+      yield* Effect.logInfo(`[CommandRunner] Spawning subprocess: ${command} ${cmdArgs.join(" ")}`);
 
       const env = { ...process.env, ...options?.env };
 
@@ -180,10 +201,10 @@ export const makeCommandRunner = (): CommandRunner => {
   return {
     run,
 
-    runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) =>
+    runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) =>
       Effect.gen(function* () {
         const args = customCommand ? parseCommandString(customCommand) : ["bun", "x", "tsc", "--noEmit"];
-        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000 });
+        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000, startupCommand });
         
         if (result.success) {
           return { success: true, dirtyFiles: [] };
@@ -198,13 +219,13 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-    runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string) =>
+    runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) =>
       Effect.gen(function* () {
         if (!customCommand) {
           return { success: true, dirtyFiles: [] };
         }
         const args = parseCommandString(customCommand);
-        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000 });
+        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000, startupCommand });
         
         if (result.success) {
           return { success: true, dirtyFiles: [] };
@@ -219,9 +240,9 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-    runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string) =>
+    runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) =>
       Effect.gen(function* () {
-        yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
+        yield* Effect.logInfo("[CommandRunner] Running operational test suites execution pass...");
         const args = customCommand ? parseCommandString(customCommand) : ["bun", "run", "test"];
 
         const shiftedPort = String(3100 + Math.floor(Math.random() * 1000));
@@ -238,6 +259,7 @@ export const makeCommandRunner = (): CommandRunner => {
           cwd, 
           timeoutMs: timeoutMs ?? 45000,
           env: envOverrides,
+          startupCommand,
         });
 
         if (result.success) {

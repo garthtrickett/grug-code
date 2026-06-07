@@ -527,9 +527,10 @@ export class GrugTaskBoard extends LitElement {
                         <div class="space-y-1">
                           <h4 class="font-semibold text-white">${proj.name}</h4>
                           <p class="text-xs text-zinc-400 font-mono">CWD: ${proj.root_path}</p>
-                          ${proj.type_check_command || proj.lint_command || proj.test_command
+                                                    ${proj.type_check_command || proj.lint_command || proj.test_command || proj.startup_command
                             ? html`
                                 <p class="text-[10px] text-zinc-500 font-mono">
+                                  ${proj.startup_command ? `Startup: ${proj.startup_command} | ` : ""}
                                   ${proj.type_check_command ? `TC: ${proj.type_check_command} | ` : ""}
                                   ${proj.lint_command ? `Lint: ${proj.lint_command} | ` : ""}
                                   ${proj.test_command ? `Test: ${proj.test_command}` : ""}
@@ -561,7 +562,7 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-  private renderProjectForm() {
+    private renderProjectForm() {
     const isNew = this._editProjId === "new";
     const proj = projectsSignal.value.find((p) => p.id === this._editProjId);
 
@@ -571,7 +572,7 @@ export class GrugTaskBoard extends LitElement {
           ${isNew ? "Register New Project" : `Edit Project: ${proj?.name}`}
         </h4>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="space-y-1">
             <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Project Name</label>
             <input
@@ -592,6 +593,17 @@ export class GrugTaskBoard extends LitElement {
               required
               .value=${proj?.root_path || ""}
               placeholder="e.g. /workspace/projects/website-api"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">Startup Command</label>
+            <input
+              name="startup_command"
+              type="text"
+              .value=${proj?.startup_command || ""}
+              placeholder="e.g. nix develop"
               class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
             />
           </div>
@@ -654,13 +666,14 @@ export class GrugTaskBoard extends LitElement {
     private handleProjectFormSubmit = (e: Event) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
-        const name = (form.elements.namedItem("name") as HTMLInputElement).value;
+            const name = (form.elements.namedItem("name") as HTMLInputElement).value;
         const root_path = (form.elements.namedItem("root_path") as HTMLInputElement).value;
     const type_check_command = (form.elements.namedItem("type_check_command") as HTMLInputElement).value || null;
     const lint_command = (form.elements.namedItem("lint_command") as HTMLInputElement).value || null;
     const test_command = (form.elements.namedItem("test_command") as HTMLInputElement).value || null;
+    const startup_command = (form.elements.namedItem("startup_command") as HTMLInputElement).value || null;
 
-    const data = { name, root_path, type_check_command, lint_command, test_command };
+    const data = { name, root_path, type_check_command, lint_command, test_command, startup_command };
     const editProjId = this._editProjId;
     const getErrorMessage = (err: unknown) => this.getErrorMessage(err);
     

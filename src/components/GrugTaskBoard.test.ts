@@ -228,7 +228,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(form).not.toBeNull();
   });
 
-  it("should render the directory scope dropdown when activeTxSignal is null and project is active", async () => {
+    it("should render the directory scope dropdown when activeTxSignal is null and project is active", async () => {
     const dMod = await import("../lib/client/stores/directoryStore");
     const pMod = await import("../lib/client/stores/projectStore");
     
@@ -239,7 +239,8 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
       root_path: "/test",
       type_check_command: null,
       lint_command: null,
-      test_command: null
+      test_command: null,
+      startup_command: null
     };
 
     await element.updateComplete;
@@ -254,7 +255,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(triggerBtn).not.toBeNull();
   });
 
-  it("should render the project selector dropdown and configure button when activeTxSignal is null", async () => {
+    it("should render the project selector dropdown and configure button when activeTxSignal is null", async () => {
     const projMod = await import("../lib/client/stores/projectStore");
     projMod.projectsSignal.value = [
       {
@@ -264,6 +265,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
         type_check_command: null,
         lint_command: null,
         test_command: null,
+        startup_command: null,
       }
     ];
 
@@ -278,6 +280,43 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
       (b: any) => b.textContent?.trim().includes("Configure Projects")
     ) as HTMLButtonElement;
     expect(configBtn).toBeDefined();
+  });
+
+    it("should render the startup command form input and submit it successfully", async () => {
+    await element.updateComplete;
+    await tick();
+
+    // Trigger config panel display
+    element._showConfig = true;
+    element._editProjId = "new";
+    await element.updateComplete;
+    await tick();
+
+    const startupInput = element.querySelector("input[name='startup_command']");
+    expect(startupInput).not.toBeNull();
+
+    const form = element.querySelector("form") as HTMLFormElement;
+    expect(form).not.toBeNull();
+
+    const createSpy = vi.spyOn(projectStore, "createProject");
+
+    // Populate the form fields
+    (form.querySelector("input[name='name']") as HTMLInputElement).value = "Form Startup Project";
+    (form.querySelector("input[name='root_path']") as HTMLInputElement).value = "/work/form-startup";
+    (startupInput as HTMLInputElement).value = "nix develop";
+
+    form.dispatchEvent(new Event("submit"));
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Form Startup Project",
+        root_path: "/work/form-startup",
+        startup_command: "nix develop",
+      })
+    );
+
+    element._showConfig = false;
+    element._editProjId = null;
   });
 
   it("should render the active task queue checklist when activeTxSignal is populated", async () => {

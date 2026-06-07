@@ -29,7 +29,7 @@ describe("projectStore - Client Preact Signals Store", () => {
   });
 
     it("should successfully trigger fetchProjects and reconcile active project", async () => {
-    const mockProjects: readonly Project[] = [
+        const mockProjects: readonly Project[] = [
       {
         id: "p-1",
         name: "Test Project A",
@@ -37,6 +37,7 @@ describe("projectStore - Client Preact Signals Store", () => {
         type_check_command: null,
         lint_command: null,
         test_command: null,
+        startup_command: null,
       },
       {
         id: "p-2",
@@ -45,6 +46,7 @@ describe("projectStore - Client Preact Signals Store", () => {
         type_check_command: "tsc",
         lint_command: "eslint",
         test_command: "vitest",
+        startup_command: null,
       },
     ];
 
@@ -86,13 +88,14 @@ describe("projectStore - Client Preact Signals Store", () => {
   });
 
     it("should successfully trigger createProject and select the created project", async () => {
-    const created: Project = {
+        const created: Project = {
       id: "p-new",
       name: "New Project",
       root_path: "/work/new",
       type_check_command: null,
       lint_command: null,
       test_command: null,
+      startup_command: "nix develop",
     };
 
     global.fetch = vi.fn().mockImplementation((url: string) => {
@@ -139,13 +142,14 @@ describe("projectStore - Client Preact Signals Store", () => {
   });
 
     it("should update project details successfully", async () => {
-    const initial: Project = {
+        const initial: Project = {
       id: "p-update",
       name: "Initial Name",
       root_path: "/work/up",
       type_check_command: null,
       lint_command: null,
       test_command: null,
+      startup_command: null,
     };
     projectsSignal.value = [initial];
     activeProjectSignal.value = initial;
@@ -154,6 +158,7 @@ describe("projectStore - Client Preact Signals Store", () => {
       ...initial,
       name: "Updated Name",
       type_check_command: "bun x tsc",
+      startup_command: "nix develop",
     };
 
     global.fetch = vi.fn().mockImplementation((url: string) => {
@@ -198,7 +203,7 @@ describe("projectStore - Client Preact Signals Store", () => {
     expect(activeProjectSignal.peek()?.name).toBe("Updated Name");
   });
 
-  it("should delete project cleanly and reset active selection", async () => {
+    it("should delete project cleanly and reset active selection", async () => {
     const project: Project = {
       id: "p-del",
       name: "Delete Me",
@@ -206,6 +211,7 @@ describe("projectStore - Client Preact Signals Store", () => {
       type_check_command: null,
       lint_command: null,
       test_command: null,
+      startup_command: null,
     };
     projectsSignal.value = [project];
     activeProjectSignal.value = project;
