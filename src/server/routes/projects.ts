@@ -47,9 +47,10 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
           id,
           name: body.name,
           root_path: body.root_path,
-          type_check_command: body.type_check_command ?? null,
+                    type_check_command: body.type_check_command ?? null,
           lint_command: body.lint_command ?? null,
           test_command: body.test_command ?? null,
+          startup_command: body.startup_command ?? null,
         })
         .returningAll()
         .executeTakeFirstOrThrow(),
@@ -76,9 +77,10 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
         body: t.Object({
       name: t.String({ minLength: 1 }),
       root_path: t.String({ minLength: 1 }),
-      type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
+            type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
       lint_command: t.Optional(t.Union([t.String(), t.Null()])),
       test_command: t.Optional(t.Union([t.String(), t.Null()])),
+      startup_command: t.Optional(t.Union([t.String(), t.Null()])),
     })
   })
   .put("/:id", async ({ params, body, runEffect, set }) => {
@@ -88,9 +90,10 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
         .set({
           name: body.name,
           root_path: body.root_path,
-          type_check_command: body.type_check_command ?? null,
+                    type_check_command: body.type_check_command ?? null,
           lint_command: body.lint_command ?? null,
           test_command: body.test_command ?? null,
+          startup_command: body.startup_command ?? null,
           updated_at: new Date(),
         })
         .where("id", "=", id)
@@ -123,9 +126,10 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
         body: t.Object({
       name: t.String({ minLength: 1 }),
       root_path: t.String({ minLength: 1 }),
-      type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
+            type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
       lint_command: t.Optional(t.Union([t.String(), t.Null()])),
       test_command: t.Optional(t.Union([t.String(), t.Null()])),
+      startup_command: t.Optional(t.Union([t.String(), t.Null()])),
     })
   })
   .delete("/:id", async ({ params, runEffect, set }) => {

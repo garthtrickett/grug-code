@@ -37,9 +37,10 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
         body: JSON.stringify({
           name: "Project Alpha",
           root_path: "/workspace/project-alpha",
-          type_check_command: "tsc",
+                    type_check_command: "tsc",
           lint_command: "eslint",
           test_command: "vitest",
+          startup_command: "nix develop",
         }),
       })
     );
@@ -49,6 +50,7 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
     expect(createdProject.id).toBeDefined();
     expect(createdProject.name).toBe("Project Alpha");
     expect(createdProject.root_path).toBe("/workspace/project-alpha");
+    expect(createdProject.startup_command).toBe("nix develop");
 
     const projectId = createdProject.id;
 
@@ -90,9 +92,10 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
         body: JSON.stringify({
           name: "Project Alpha Updated",
           root_path: "/workspace/project-alpha-updated",
-          type_check_command: "tsc --noEmit",
+                    type_check_command: "tsc --noEmit",
           lint_command: "eslint .",
           test_command: "vitest run",
+          startup_command: "nix develop --command",
         }),
       })
     );
@@ -100,6 +103,7 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
     const updated = await updateRes.json() as any;
     expect(updated.name).toBe("Project Alpha Updated");
     expect(updated.root_path).toBe("/workspace/project-alpha-updated");
+    expect(updated.startup_command).toBe("nix develop --command");
 
     // 5. DELETE (Delete)
     const deleteRes = await app.handle(
@@ -137,9 +141,10 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
         body: JSON.stringify({
           name: "Project Nullable Fields",
           root_path: "/workspace/project-nullable-fields",
-          type_check_command: "tsc",
+                    type_check_command: "tsc",
           lint_command: null,
           test_command: null,
+          startup_command: null,
         }),
       })
     );
@@ -150,6 +155,7 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
     expect(createdProject.name).toBe("Project Nullable Fields");
     expect(createdProject.lint_command).toBeNull();
     expect(createdProject.test_command).toBeNull();
+    expect(createdProject.startup_command).toBeNull();
   });
 
   it("should fail validation if required fields are empty", async () => {
