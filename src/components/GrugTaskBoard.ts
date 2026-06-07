@@ -288,8 +288,13 @@ export class GrugTaskBoard extends LitElement {
         itemToValue: (item) => item,
       });
 
-      const service = new VanillaMachine(select.machine, {
+            const service = new VanillaMachine(select.machine, {
         id: "directory-scope-select",
+        ids: {
+          trigger: "directory-scope-select-trigger",
+          label: "directory-scope-select-label",
+          content: "directory-scope-select-content",
+        },
         collection,
         value: selectedScopeSignal.value ? [selectedScopeSignal.value] : [],
         onValueChange(details: select.ValueChangeDetails<string>) {
@@ -389,8 +394,13 @@ export class GrugTaskBoard extends LitElement {
         itemToValue: (item) => item ? item.id : "",
       });
 
-      const service = new VanillaMachine(select.machine, {
+            const service = new VanillaMachine(select.machine, {
         id: "project-select-api",
+        ids: {
+          trigger: "project-select-api-trigger",
+          label: "project-select-api-label",
+          content: "project-select-api-content",
+        },
         collection,
         value: activeProjectSignal.value ? [activeProjectSignal.value.id] : [],
         onValueChange(details: select.ValueChangeDetails<string>) {
