@@ -155,27 +155,30 @@ export const taskStore = {
         return;
       }
 
-      const state = yield* Effect.tryPromise({
-        try: () => res.json() as Promise<{ tx: GitTransaction; tasks: readonly PlanTask[] } | null>,
-        catch: (e) => new Error(`Failed to parse transaction status payload: ${String(e)}`),
-      });
+                const state = yield* Effect.tryPromise({
+            try: () => res.json() as Promise<{ tx: GitTransaction; tasks: readonly PlanTask[] } | null>,
+            catch: (e) => new Error(`Failed to parse transaction status payload: ${String(e)}`),
+          });
 
-      if (state) {
-        yield* clientLog("info", `[taskStore] Active transaction reconciled successfully with server: id=${state.tx.id}`);
-        activeTxSignal.value = state.tx;
-        tasksSignal.value = state.tasks;
+          if (state && typeof state === "object" && "tx" in state && state.tx) {
+            yield* clientLog("info", `[taskStore] Active transaction reconciled successfully with server: id=${state.tx.id}`);
+            activeTxSignal.value = state.tx;
+            tasksSignal.value = state.tasks || [];
 
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("grug-active-tx", JSON.stringify(state.tx));
-          localStorage.setItem("grug-active-tasks", JSON.stringify(state.tasks));
-        }
+            if (typeof localStorage !== "undefined") {
+              localStorage.setItem("grug-active-tx", JSON.stringify(state.tx));
+              localStorage.setItem("grug-active-tasks", JSON.stringify(state.tasks || []));
+            }
 
-        const hasPending = state.tasks.some((t) => t.status === "pending");
-        if (!isPausedSignal.value && hasPending) {
-          yield* clientLog("info", "[taskStore] Active pending tasks found during reconciliation. Resuming autopilot runner...");
-          yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
-        }
-      } else {
+            const hasPending = (state.tasks || []).some((t) => t.status === "pending");
+            if (!isPausedSignal.value && hasPending) {
+              yield* clientLog("info", "[taskStore] Active pending tasks found during reconciliation. Resuming autopilot runner...");
+              yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
+            }
+          } else {
+            yield* clientLog("info", "[taskStore] No active transaction found on server. Clearing any stale local storage states.");
+            yield* taskStore.clear();
+          }
         yield* clientLog("info", "[taskStore] No active transaction found on server. Clearing any stale local storage states.");
         yield* taskStore.clear();
       }

@@ -28,7 +28,7 @@ describe("projectStore - Client Preact Signals Store", () => {
     expect(localStorage.getItem("grug-cwd")).toBeNull();
   });
 
-  it("should successfully trigger fetchProjects and reconcile active project", async () => {
+    it("should successfully trigger fetchProjects and reconcile active project", async () => {
     const mockProjects: readonly Project[] = [
       {
         id: "p-1",
@@ -48,10 +48,33 @@ describe("projectStore - Client Preact Signals Store", () => {
       },
     ];
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockProjects,
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/projects")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => mockProjects,
+        });
+      }
+      if (url.includes("/api/workspace/status")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => null,
+        });
+      }
+      if (url.includes("/api/workspace/directories")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [],
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
     }) as any;
 
     localStorage.setItem("grug-cwd", "/work/b");
@@ -62,7 +85,7 @@ describe("projectStore - Client Preact Signals Store", () => {
     expect(activeProjectSignal.value).toEqual(mockProjects[1]);
   });
 
-  it("should successfully trigger createProject and select the created project", async () => {
+    it("should successfully trigger createProject and select the created project", async () => {
     const created: Project = {
       id: "p-new",
       name: "New Project",
@@ -72,10 +95,33 @@ describe("projectStore - Client Preact Signals Store", () => {
       test_command: null,
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => created,
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/projects")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => created,
+        });
+      }
+      if (url.includes("/api/workspace/status")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => null,
+        });
+      }
+      if (url.includes("/api/workspace/directories")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [],
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
     }) as any;
 
     const result = await runClientPromise(projectStore.createProject({
@@ -92,7 +138,7 @@ describe("projectStore - Client Preact Signals Store", () => {
     expect(localStorage.getItem("grug-cwd")).toBe("/work/new");
   });
 
-  it("should update project details successfully", async () => {
+    it("should update project details successfully", async () => {
     const initial: Project = {
       id: "p-update",
       name: "Initial Name",
@@ -110,10 +156,33 @@ describe("projectStore - Client Preact Signals Store", () => {
       type_check_command: "bun x tsc",
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => updated,
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/projects")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => updated,
+        });
+      }
+      if (url.includes("/api/workspace/status")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => null,
+        });
+      }
+      if (url.includes("/api/workspace/directories")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [],
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
     }) as any;
 
     const result = await runClientPromise(projectStore.updateProject("p-update", {
