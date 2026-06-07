@@ -63,9 +63,9 @@ test.describe("Grug Code - Project Selector and Dynamic Custom Execution E2E", (
     await page.fill("input[name='type_check_command']", "echo 'custom typecheck success'");
     await page.fill("input[name='test_command']", "echo 'custom test success'");
     
-    await page.click("form button:has-text('Register Project')");
+        await page.click("form button:has-text('Register Project')");
 
-    const selectTrigger = page.locator("button[role='combobox']");
+    const selectTrigger = page.locator("button#project-select-api-trigger");
     await expect(selectTrigger).toContainText("E2E Dynamic Project");
 
     await page.fill("input[name='description']", "Test project dynamic checkout execution");

@@ -66,8 +66,8 @@ test.describe("Grug Code Scoped Directory Selector E2E", () => {
     const heading = page.locator("grug-task-board h2");
     await expect(heading).toContainText("Launch Development Session");
 
-    // 4. Click the directory scope trigger dropdown
-    const selectTrigger = page.locator("grug-task-board button[role='combobox']");
+        // 4. Click the directory scope trigger dropdown
+    const selectTrigger = page.locator("grug-task-board button#directory-scope-select-trigger");
     await expect(selectTrigger).toBeVisible();
     await selectTrigger.click();
 
