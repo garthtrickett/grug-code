@@ -288,7 +288,7 @@ export class GrugTaskBoard extends LitElement {
         itemToValue: (item) => item,
       });
 
-            const service = new VanillaMachine(select.machine, {
+      const service = new VanillaMachine(select.machine, {
         id: "directory-scope-select",
         ids: {
           trigger: "directory-scope-select-trigger",
@@ -357,7 +357,7 @@ export class GrugTaskBoard extends LitElement {
               <ul
                 id=${api.getContentProps().id}
                 role="listbox"
-                class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded border border-zinc-850 bg-zinc-950 py-1 shadow-lg text-sm text-zinc-200"
+                class="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded border border-zinc-855 bg-zinc-950 py-1 shadow-lg text-sm text-zinc-200"
               >
                 ${directories.map((dir) => {
                   const optionProps = api.getItemProps({ item: dir });
@@ -394,7 +394,7 @@ export class GrugTaskBoard extends LitElement {
         itemToValue: (item) => item ? item.id : "",
       });
 
-            const service = new VanillaMachine(select.machine, {
+      const service = new VanillaMachine(select.machine, {
         id: "project-select-api",
         ids: {
           trigger: "project-select-api-trigger",
@@ -523,11 +523,11 @@ export class GrugTaskBoard extends LitElement {
                 ${projects.length === 0
                   ? html`<p class="text-xs text-zinc-400 italic">No projects registered. Click "Add Project" to begin.</p>`
                   : projects.map((proj) => html`
-                      <div class="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-850 rounded-lg text-sm">
+                      <div class="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-855 rounded-lg text-sm">
                         <div class="space-y-1">
                           <h4 class="font-semibold text-white">${proj.name}</h4>
                           <p class="text-xs text-zinc-400 font-mono">CWD: ${proj.root_path}</p>
-                                                    ${proj.type_check_command || proj.lint_command || proj.test_command || proj.startup_command
+                          ${proj.type_check_command || proj.lint_command || proj.test_command || proj.startup_command
                             ? html`
                                 <p class="text-[10px] text-zinc-500 font-mono">
                                   ${proj.startup_command ? `Startup: ${proj.startup_command} | ` : ""}
@@ -562,7 +562,7 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-    private renderProjectForm() {
+  private renderProjectForm() {
     const isNew = this._editProjId === "new";
     const proj = projectsSignal.value.find((p) => p.id === this._editProjId);
 
@@ -617,7 +617,7 @@ export class GrugTaskBoard extends LitElement {
               type="text"
               .value=${proj?.type_check_command || ""}
               placeholder="e.g. tsc --noEmit"
-              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
+              class="w-full px-3 py-2 bg-zinc-900 border border-zinc-855 rounded text-zinc-100 text-xs focus:outline-none focus:border-zinc-700"
             />
           </div>
 
@@ -663,7 +663,7 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-      private handleProjectFormSubmit = (e: Event) => {
+  private handleProjectFormSubmit = (e: Event) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     
@@ -671,7 +671,7 @@ export class GrugTaskBoard extends LitElement {
       try {
         const el = (form.elements?.namedItem(name) || form.querySelector(`[name='${name}']`)) as HTMLInputElement | null;
         return el ? el.value : "";
-      } catch {
+            } catch {
         const el = form.querySelector(`[name='${name}']`) as HTMLInputElement | null;
         return el ? el.value : "";
       }
@@ -791,7 +791,7 @@ export class GrugTaskBoard extends LitElement {
                               ${suggestedOptionsSignal.value.map((option) => html`
                                 <button
                                   @click=${() => this.handleSendDiscussionReply(option)}
-                                  class="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 hover:text-white border border-zinc-800 text-zinc-300 font-medium rounded text-xs transition-all cursor-pointer"
+                                  class="px-4 py-2 bg-zinc-900 hover:bg-zinc-855 hover:text-white border border-zinc-800 text-zinc-300 font-medium rounded text-xs transition-all cursor-pointer"
                                 >
                                   ${option}
                                 </button>
@@ -902,12 +902,12 @@ export class GrugTaskBoard extends LitElement {
                       <p class="text-sm text-zinc-400">Initialize a transactional workspace environment to begin coding feature updates.</p>
                     </div>
 
+                    <!-- Expandable Config Panel -->
+                    ${this.renderProjectConfig()}
+
                     <form @submit=${this.handleInitSubmit} class="space-y-4">
                       <!-- Step 5 Active Project Workspace Selector -->
                       ${this.renderProjectSelect()}
-
-                      <!-- Expandable Config Panel -->
-                      ${this.renderProjectConfig()}
 
                       <!-- Zag.js Workspace Directory Scoping -->
                       ${activeProjectSignal.value 

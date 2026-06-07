@@ -64,7 +64,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     await import("./GrugTaskBoard");
   });
 
-    beforeEach(async () => {
+  beforeEach(async () => {
     await runClientPromise(taskStore.clear());
     const projMod = await import("../lib/client/stores/projectStore");
     await runClientPromise(projMod.projectStore.clear());
@@ -229,7 +229,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(form).not.toBeNull();
   });
 
-    it("should render the directory scope dropdown when activeTxSignal is null and project is active", async () => {
+  it("should render the directory scope dropdown when activeTxSignal is null and project is active", async () => {
     const dMod = await import("../lib/client/stores/directoryStore");
     const pMod = await import("../lib/client/stores/projectStore");
     
@@ -256,7 +256,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(triggerBtn).not.toBeNull();
   });
 
-    it("should render the project selector dropdown and configure button when activeTxSignal is null", async () => {
+  it("should render the project selector dropdown and configure button when activeTxSignal is null", async () => {
     const projMod = await import("../lib/client/stores/projectStore");
     projMod.projectsSignal.value = [
       {
@@ -283,7 +283,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(configBtn).toBeDefined();
   });
 
-    it("should render the startup command form input and submit it successfully", async () => {
+  it("should render the startup command form input and submit it successfully", async () => {
     await element.updateComplete;
     await tick();
 
@@ -296,7 +296,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     const startupInput = element.querySelector("input[name='startup_command']");
     expect(startupInput).not.toBeNull();
 
-    const form = element.querySelector("form") as HTMLFormElement;
+    const form = startupInput.closest("form") as HTMLFormElement;
     expect(form).not.toBeNull();
 
     const createSpy = vi.spyOn(projectStore, "createProject");
