@@ -672,7 +672,7 @@ export class GrugTaskBoard extends LitElement {
         const el = (form.elements?.namedItem(name) || form.querySelector(`[name='${name}']`)) as HTMLInputElement | null;
         return el ? el.value : "";
             } catch {
-        const el = form.querySelector(`[name='${name}']`) as HTMLInputElement | null;
+        const el = form.querySelector(`[name='${name}']`);
         return el ? el.value : "";
       }
     };

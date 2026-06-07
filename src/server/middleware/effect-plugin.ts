@@ -28,8 +28,8 @@ export const effectPlugin = (app: Elysia) => app.derive(
   { as: "global" },
   ({ request }) => {
     return {
-            runEffect: <A, E, R>(
-        effect: Effect.Effect<A, E, R>,
+                  runEffect: <A, E>(
+        effect: Effect.Effect<A, E, never>,
         options?: { name?: string; attributes?: Record<string, unknown> },
       ): Promise<A> => {
         const method = request.method;
