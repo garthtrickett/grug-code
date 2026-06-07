@@ -47,9 +47,10 @@ const mockBun = {
     return fs.writeFile(destination, data, "utf-8");
   },
   serve: (options?: MockServeOptions) => {
-    if (!options || !options.fetch) {
+    const state = { opts: options || {} };
+    if (!state.opts.fetch) {
       return {
-        port: options?.port === 0 ? 3001 : (options?.port || 0),
+        port: state.opts.port === 0 ? 3001 : (state.opts.port || 0),
         hostname: "localhost",
         stop: () => Promise.resolve(),
         reload: () => {},
@@ -84,34 +85,41 @@ const mockBun = {
           body: req.method !== "GET" && req.method !== "HEAD" ? body : undefined,
         });
 
-        options.fetch!(webReq)
-          .then(async (webRes) => {
-            res.statusCode = webRes.status;
-            webRes.headers.forEach((value, key) => {
-              res.setHeader(key, value);
-            });
+        const fetchHandler = state.opts.fetch;
+        if (fetchHandler) {
+          fetchHandler(webReq)
+            .then(async (webRes) => {
+              res.statusCode = webRes.status;
+              webRes.headers.forEach((value, key) => {
+                res.setHeader(key, value);
+              });
 
-            if (webRes.body) {
-              const reader = webRes.body.getReader();
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                res.write(value);
+              if (webRes.body) {
+                const reader = webRes.body.getReader();
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  res.write(value);
+                }
               }
-            }
-            res.end();
-          })
-          .catch((err: Error) => {
-            if (options.error) {
-              options.error(err);
-            }
-            res.statusCode = 500;
-            res.end(err.message);
-          });
+              res.end();
+            })
+            .catch((err: Error) => {
+              const errorHandler = state.opts.error;
+              if (errorHandler) {
+                errorHandler(err);
+              }
+              res.statusCode = 500;
+              res.end(err.message);
+            });
+        } else {
+          res.statusCode = 500;
+          res.end("No fetch handler configured on mock server");
+        }
       });
     });
 
-    const listenTarget = options.unix || options.port || 0;
+    const listenTarget = state.opts.unix || state.opts.port || 0;
     server.listen(listenTarget);
 
     return {
@@ -124,9 +132,10 @@ const mockBun = {
       },
       stop: () => new Promise<void>((resolve) => {
         server.close(() => {
-          if (options.unix) {
+          const unixPath = state.opts.unix;
+          if (unixPath) {
             try {
-              fsSync.unlinkSync(options.unix);
+              fsSync.unlinkSync(unixPath);
             } catch {
               // Ignore cleanup issues
             }
@@ -136,7 +145,7 @@ const mockBun = {
       }),
       reload: (newOptions?: MockServeOptions) => {
         if (newOptions) {
-          options = { ...options, ...newOptions };
+          state.opts = { ...state.opts, ...newOptions };
         }
       },
     };
@@ -151,10 +160,37 @@ if (typeof (globalThis as unknown as Record<string, unknown>)["Bun"] === "undefi
   (globalThis as unknown as Record<string, unknown>)["Bun"] = mockBun;
 }
 
+const getUrlString = (input: RequestInfo | URL): string => {
+  if (typeof input === "string") {
+    return input;
+  }
+  if ("href" in input) {
+    return input.href;
+  }
+  return input.url;
+};
+
+const safeStringifyBody = (body: unknown): string | Buffer => {
+  if (typeof body === "string") {
+    return body;
+  }
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+  if (body && typeof body === "object" && "toString" in body) {
+    const str = (body as { toString(): string }).toString();
+    if (str !== "[object Object]") {
+      return str;
+    }
+  }
+  return "";
+};
+
 const originalFetch = globalThis.fetch;
-globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit & { unix?: string }): Promise<Response> => {
+const customFetch = async (input: RequestInfo | URL, init?: RequestInit & { unix?: string }): Promise<Response> => {
   if (init && init.unix) {
-    const url = new URL(input.toString());
+    const urlString = getUrlString(input);
+    const url = new URL(urlString);
     return new Promise<Response>((resolve, reject) => {
       const req = http.request({
         socketPath: init.unix,
@@ -162,23 +198,54 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit & { unix?
         method: init.method || "GET",
         headers: init.headers as Record<string, string>,
       }, (res) => {
+        const responseHeaders = new Headers();
+        for (const [key, value] of Object.entries(res.headers)) {
+          if (value !== undefined) {
+            if (Array.isArray(value)) {
+              for (const v of value) {
+                responseHeaders.append(key, v);
+              } 
+            } else {
+              responseHeaders.append(key, value);
+            }
+          }
+        }
+
+        const contentType = res.headers["content-type"] || "";
+        const isEventStream = contentType.includes("text/event-stream");
+
+        if (isEventStream) {
+          const bodyStream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              res.on("data", (chunk: Uint8Array) => {
+                controller.enqueue(new Uint8Array(chunk));
+              });
+              res.on("end", () => {
+                controller.close();
+              });
+              res.on("error", (err) => {
+                controller.error(err);
+              });
+            },
+            cancel() {
+              res.destroy();
+            }
+          });
+
+          const response = new Response(bodyStream, {
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            headers: responseHeaders,
+          });
+
+          resolve(response);
+          return;
+        }
+
         const chunks: Uint8Array[] = [];
         res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
         res.on("end", () => {
           const body = Buffer.concat(chunks);
-          const responseHeaders = new Headers();
-          for (const [key, value] of Object.entries(res.headers)) {
-            if (value !== undefined) {
-              if (Array.isArray(value)) {
-                for (const v of value) {
-                  responseHeaders.append(key, v);
-                }
-              } else {
-                responseHeaders.append(key, value);
-              }
-            }
-          }
-
           const response = new Response(body, {
             status: res.statusCode,
             statusText: res.statusMessage,
@@ -189,9 +256,8 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit & { unix?
             get() {
               return new ReadableStream<Uint8Array>({
                 start(controller) {
-                  res.on("data", (chunk: Uint8Array) => controller.enqueue(chunk));
-                  res.on("end", () => controller.close());
-                  res.on("error", (err) => controller.error(err));
+                  controller.enqueue(new Uint8Array(body));
+                  controller.close();
                 }
               });
             },
@@ -203,17 +269,15 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit & { unix?
       });
       req.on("error", reject);
       if (init.body) {
-        if (typeof init.body === "string" || Buffer.isBuffer(init.body)) {
-          req.write(init.body);
-        } else {
-          req.write(String(init.body));
-        }
+        req.write(safeStringifyBody(init.body));
       }
       req.end();
     });
   }
   return originalFetch(input, init);
 };
+
+globalThis.fetch = Object.assign(customFetch, originalFetch);
 
 const workerId = process.env.VITEST_WORKER_ID || "1";
 
