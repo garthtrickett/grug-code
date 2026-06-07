@@ -2,8 +2,7 @@ import { Elysia, t } from "elysia";
 import { Effect } from "effect";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { makeWorkspaceController } from "../../lib/server/WorkspaceController.ts";
-import { makeCommandRunner } from "../../lib/server/CommandRunner.ts";
+import { makeWorkspaceController, progressBroadcaster } from "../../lib/server/WorkspaceController.ts";
 import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSitterParser.ts";
 import { extractSkeleton } from "../../lib/server/SkeletalExplorer.ts";
 import { securityMiddleware } from "../middleware/security.ts";
@@ -16,8 +15,6 @@ import { ResearchLoop, ResearchLoopLive } from "../../features/agent/ResearchLoo
 import { ProjectStructureMapper, ProjectStructureMapperLive } from "../../features/agent/ProjectStructureMapper.ts";
 import { AiServiceLive } from "../../lib/server/AiService.ts";
 import { CorrectionLoop, CorrectionLoopLive } from "../../features/agent/CorrectionLoop.ts";
-
-const runner = makeCommandRunner();
 
 const txSchema = t.Object({
   id: t.String(),
@@ -32,6 +29,48 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(securityMiddleware)
   .get("/progress", () => {
     return { progress: "Grug working hard..." };
+  })
+  .get("/stream-progress", ({ set }) => {
+    set.headers["Content-Type"] = "text/event-stream";
+    set.headers["Cache-Control"] = "no-cache";
+    set.headers["Connection"] = "keep-alive";
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const listener = (data: string) => {
+          try {
+            controller.enqueue(`data: ${data}\n\n`);
+          } catch {}
+        };
+        progressBroadcaster.on("progress", listener);
+
+        // Keep-alive heartbeat tick
+        const interval = setInterval(() => {
+          try {
+            controller.enqueue(`data: heartbeat\n\n`);
+          } catch {}
+        }, 5000);
+
+        (controller as unknown as { _cleanup: () => void })._cleanup = () => {
+          clearInterval(interval);
+          progressBroadcaster.off("progress", listener);
+        };
+      },
+      cancel(controller) {
+        const cleanup = (controller as unknown as { _cleanup?: () => void })._cleanup;
+        if (cleanup) {
+          cleanup();
+        }
+      }
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+      }
+    });
   })
   .get("/status", async ({ query, runEffect, set }) => {
     const controller = makeWorkspaceController(query.cwd);
@@ -258,44 +297,6 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     body: t.Object({
       tx: txSchema,
       paths: t.Array(t.String()),
-      cwd: t.Optional(t.String())
-    })
-  })
-  .post("/verify", async ({ body, runEffect, set }) => {
-    const type = body.type;
-    const effect = type === "typecheck" 
-      ? runner.runTypeCheck(body.cwd, 30000) 
-      : type === "lint"
-        ? runner.runLintCheck(body.cwd, 30000)
-        : runner.runTestSuite(body.cwd, 45000);
-    
-    const res = await runEffect(Effect.either(effect));
-    if (res._tag === "Left") {
-      set.status = 400;
-      return { error: (res.left).message };
-    }
-    return res.right;
-  }, { 
-    body: t.Object({
-      tx: txSchema,
-      type: t.Union([t.Literal("typecheck"), t.Literal("lint"), t.Literal("test")]),
-      cwd: t.Optional(t.String())
-    })
-  })
-  .post("/rollback", async ({ body, runEffect, set }) => {
-    const tx = body.tx;
-    const controller = makeWorkspaceController(body.cwd);
-    const effect = controller.rollbackToCheckpoint(tx, body.commitHash);
-    const res = await runEffect(Effect.either(effect));
-    if (res._tag === "Left") {
-      set.status = 400;
-      return { error: (res.left).message };
-    }
-    return res.right;
-  }, { 
-    body: t.Object({
-      tx: txSchema,
-      commitHash: t.String(),
       cwd: t.Optional(t.String())
     })
   })

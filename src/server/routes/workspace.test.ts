@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { app } from "../index";
 import { getActiveToken } from "../middleware/security";
 import * as fs from "node:fs/promises";
+import fsSync from "node:fs";
 import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
@@ -536,5 +537,91 @@ export function hello(name: string): string {
         body: JSON.stringify({ tx, cwd: tempDir }),
       })
     );
+  });
+
+  it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
+    const testSocketPath = path.resolve(`/tmp/grug-test-sse-\${crypto.randomUUID()}.sock`);
+    
+    // Prepare directory and clean up stale test socket files
+    try {
+      const dir = path.dirname(testSocketPath);
+      if (!fsSync.existsSync(dir)) {
+        await fs.mkdir(dir, { recursive: true });
+      }
+      if (fsSync.existsSync(testSocketPath)) {
+        await fs.unlink(testSocketPath);
+      }
+    } catch {}
+
+    // Import udsApp dynamically
+    const { udsApp } = await import("../index");
+    
+    // Temporarily override config's socketPath
+    const { config } = await import("../../lib/server/Config");
+    const originalSocketPath = config.surgical.socketPath;
+    config.surgical.socketPath = testSocketPath;
+
+        // Start UDS server
+    const serverUds = udsApp.listen({ unix: testSocketPath })
+    expect(serverUds.server).toBeDefined();
+
+    try {
+      // Connect to UDS server SSE stream via Bun's UDS fetch support
+      const token = getActiveToken();
+      const response = await fetch("http://localhost/api/workspace/stream-progress", {
+        unix: testSocketPath,
+        headers: {
+          "X-Grug-Token": token,
+        }
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+
+      const reader = response.body?.getReader();
+      expect(reader).toBeDefined();
+
+      if (reader) {
+        // Emit a mock progress update
+        const { progressBroadcaster } = await import("../../lib/server/WorkspaceController");
+        
+        setTimeout(() => {
+          progressBroadcaster.emit("progress", "Grug-SSE-Handshake-Success");
+        }, 100);
+
+        // Read from stream
+        let streamClosed = false;
+        let receivedText = "";
+        
+        const timeoutId = setTimeout(() => {
+          reader.cancel().catch(() => {});
+        }, 3000);
+
+        while (!streamClosed) {
+          const { value, done } = await reader.read();
+          if (done) {
+            streamClosed = true;
+            break;
+          }
+          const chunk = new TextDecoder().decode(value);
+          receivedText += chunk;
+          if (receivedText.includes("Grug-SSE-Handshake-Success")) {
+            break;
+          }
+        }
+
+        clearTimeout(timeoutId);
+        expect(receivedText).toContain("data: Grug-SSE-Handshake-Success");
+      }
+    } finally {
+      // Clean up server and restore original socket path config
+      await serverUds.stop();
+      config.surgical.socketPath = originalSocketPath;
+      try {
+        if (fsSync.existsSync(testSocketPath)) {
+          await fs.unlink(testSocketPath);
+        }
+      } catch {}
+    }
   });
 });

@@ -1,3 +1,6 @@
+import * as os from "node:os";
+import * as path from "node:path";
+
 const getEnv = (key: string): string => {
   const value = process.env[key];
   if (!value) {
@@ -43,5 +46,16 @@ export const config = {
   surgical: {
     fileLimit: parseInt(getEnvOrDefault("SURGICAL_ROUTER_FILE_LIMIT", "3"), 10),
     tokenLimit: parseInt(getEnvOrDefault("SURGICAL_ROUTER_TOKEN_LIMIT", "20000"), 10),
+    socketPath: getEnvOrDefault("SURGICAL_ROUTER_SOCKET_PATH", (() => {
+      try {
+        return path.join(os.tmpdir(), "grug.sock");
+      } catch {
+        try {
+          return path.join(os.homedir(), "grug.sock");
+        } catch {
+          return "/tmp/grug.sock";
+        }
+      }
+    })()),
   },
 };

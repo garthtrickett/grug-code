@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import type { VerificationResult, DirtyFile } from "./WorkspaceController";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
+import { progressBroadcaster } from "./WorkspaceController";
+import { config } from "./Config";
 
 export interface CommandOptions {
   readonly cwd?: string;
@@ -134,23 +136,23 @@ export const makeCommandRunner = (): CommandRunner => {
           }
 
           child.stdout?.on("data", (chunk: unknown) => {
-            if (Buffer.isBuffer(chunk)) {
-              stdout += chunk.toString("utf-8");
-            } else if (typeof chunk === "string") {
-              stdout += chunk;
-            } else {
-              stdout += String(chunk);
-            }
+            const text = Buffer.isBuffer(chunk)
+              ? chunk.toString("utf-8")
+              : typeof chunk === "string"
+                ? chunk
+                : String(chunk);
+            stdout += text;
+            progressBroadcaster.emit("progress", JSON.stringify({ type: "stdout", text }));
           });
 
           child.stderr?.on("data", (chunk: unknown) => {
-            if (Buffer.isBuffer(chunk)) {
-              stderr += chunk.toString("utf-8");
-            } else if (typeof chunk === "string") {
-              stderr += chunk;
-            } else {
-              stderr += String(chunk);
-            }
+            const text = Buffer.isBuffer(chunk)
+              ? chunk.toString("utf-8")
+              : typeof chunk === "string"
+                ? chunk
+                : String(chunk);
+            stderr += text;
+            progressBroadcaster.emit("progress", JSON.stringify({ type: "stderr", text }));
           });
 
           child.on("close", (code) => {
@@ -221,10 +223,21 @@ export const makeCommandRunner = (): CommandRunner => {
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Initiating operational test suites execution pass...");
         const args = customCommand ? parseCommandString(customCommand) : ["bun", "run", "test"];
+
+        const shiftedPort = String(3100 + Math.floor(Math.random() * 1000));
+        const shiftedBackendPort = String(4300 + Math.floor(Math.random() * 1000));
+
+        const envOverrides: Record<string, string> = {
+          NODE_ENV: "test",
+          PORT: shiftedPort,
+          BACKEND_PORT: shiftedBackendPort,
+          SURGICAL_ROUTER_SOCKET_PATH: config.surgical.socketPath,
+        };
+
         const result = yield* run(args, { 
           cwd, 
           timeoutMs: timeoutMs ?? 45000,
-          env: { NODE_ENV: "test" }
+          env: envOverrides,
         });
 
         if (result.success) {

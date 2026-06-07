@@ -30,11 +30,16 @@ const mockBun = {
   file: (path: string | URL) => ({
     text: () => fs.readFile(typeof path === "string" ? path : path.toString(), "utf-8"),
   }),
-  write: (path: unknown, content: unknown) => {
+    write: (path: unknown, content: unknown) => {
     const destination = typeof path === "string" ? path : String(path);
     const data = typeof content === "string" ? content : String(content);
     return fs.writeFile(destination, data, "utf-8");
   },
+  serve: (options: any) => ({
+    port: options?.port === 0 ? 3001 : (options?.port || 0),
+    hostname: "localhost",
+    stop: () => Promise.resolve(),
+  }),
   env: process.env,
   gc: () => {},
   Glob: MockGlob,

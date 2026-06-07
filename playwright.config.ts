@@ -49,7 +49,7 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     env: {
       PORT: "3001",
-      BACKEND_PORT: "42070",
+      BACKEND_PORT: "42069",
       VITE_SILENT_CLIENT_LOGGING: "true",
       SURGICAL_ROUTER_FILE_LIMIT: "3",
       SURGICAL_ROUTER_TOKEN_LIMIT: "20000",

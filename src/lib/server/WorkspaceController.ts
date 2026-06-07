@@ -5,6 +5,9 @@ import * as path from "node:path";
 import { applyDiffs } from "./AiderPatcher";
 import type { PlanTask } from "../shared/ai-schemas.ts";
 import { db } from "../../db/client";
+import { EventEmitter } from "node:events";
+
+export const progressBroadcaster = new EventEmitter();
 
 export interface DirtyFile {
   readonly filePath: string;
@@ -66,22 +69,22 @@ const runCommand = (args: string[], cwd?: string, env?: Record<string, string>) 
       let stderr = "";
       
       child.stdout?.on("data", (chunk: unknown) => {
-        if (Buffer.isBuffer(chunk)) {
-          stdout += chunk.toString("utf-8");
-        } else if (typeof chunk === "string") {
-          stdout += chunk;
-        } else {
-          stdout += String(chunk);
-        }
+        const text = Buffer.isBuffer(chunk)
+          ? chunk.toString("utf-8")
+          : typeof chunk === "string"
+            ? chunk
+            : String(chunk);
+        stdout += text;
+        progressBroadcaster.emit("progress", JSON.stringify({ type: "stdout", text }));
       });
       child.stderr?.on("data", (chunk: unknown) => {
-        if (Buffer.isBuffer(chunk)) {
-          stderr += chunk.toString("utf-8");
-        } else if (typeof chunk === "string") {
-          stderr += chunk;
-        } else {
-          stderr += String(chunk);
-        }
+        const text = Buffer.isBuffer(chunk)
+          ? chunk.toString("utf-8")
+          : typeof chunk === "string"
+            ? chunk
+            : String(chunk);
+        stderr += text;
+        progressBroadcaster.emit("progress", JSON.stringify({ type: "stderr", text }));
       });
       child.on("close", (exitCode) => {
         resolve({ exitCode: exitCode ?? 0, stdout, stderr });
@@ -239,6 +242,8 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
     runTypeCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
+        progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_start" }));
+        
         const proj = yield* getProject();
         const cmd = proj && proj.type_check_command 
           ? parseCommandString(proj.type_check_command) 
@@ -249,8 +254,10 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
         if (!success) {
           yield* Effect.logWarning("[WorkspaceController] Typecheck failures caught.");
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_fail" }));
         } else {
           yield* Effect.logInfo("[WorkspaceController] Typecheck passed successfully.");
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_success" }));
         }
 
         return {
@@ -263,8 +270,11 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
     runLintCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
+        progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_start" }));
+        
         const proj = yield* getProject();
         if (!proj || !proj.lint_command) {
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_success" }));
           return { success: true, dirtyFiles: [] };
         }
         const cmd = parseCommandString(proj.lint_command);
@@ -274,8 +284,10 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
         if (!success) {
           yield* Effect.logWarning("[WorkspaceController] Lint check failures caught.");
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_fail" }));
         } else {
           yield* Effect.logInfo("[WorkspaceController] Lint check passed successfully.");
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_success" }));
         }
 
         return {
@@ -288,6 +300,8 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
     runTestSuite: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
+        progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_start" }));
+        
         const proj = yield* getProject();
         const cmd = proj && proj.test_command 
           ? parseCommandString(proj.test_command) 
@@ -298,8 +312,10 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
         if (!success) {
           yield* Effect.logWarning(`[WorkspaceController] Testing suites reports failure. Output:\n${result.stdout}\n${result.stderr}`);
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_fail" }));
         } else {
           yield* Effect.logInfo("[WorkspaceController] Testing suites passed successfully.");
+          progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_success" }));
         }
 
         return {

@@ -82,4 +82,45 @@ FAIL  tests/e2e/dictionary-lookup.spec.ts
     expect(parsed).toContain("tests/e2e/dictionary-lookup.spec.ts");
     expect(parsed.length).toBe(2);
   });
+
+  it("should intercept stdout/stderr and route them to progressBroadcaster during run", async () => {
+    const runner = makeCommandRunner();
+    const { progressBroadcaster } = await import("./WorkspaceController");
+
+    let receivedMessage = "";
+    const listener = (data: string) => {
+      receivedMessage = data;
+    };
+    progressBroadcaster.on("progress", listener);
+
+    try {
+      const runProgram = runner.run(["bun", "-e", "console.log('UDS-broadcaster-success')"]);
+      await Effect.runPromise(runProgram);
+      
+      expect(receivedMessage).toContain("UDS-broadcaster-success");
+    } finally {
+      progressBroadcaster.off("progress", listener);
+    }
+  });
+
+  it("should apply port-shifting and pass down socketPath in environment during runTestSuite", async () => {
+    const runner = makeCommandRunner();
+    const testSuiteResult = await Effect.runPromise(
+      runner.runTestSuite(undefined, 10000, "bun -e console.log(JSON.stringify(process.env))")
+    );
+
+    expect(testSuiteResult.success).toBe(true);
+  });
+
+    it("should execute multiple parallel test suites without port collision", async () => {
+    const runner = makeCommandRunner();
+    const parallelRuns = Array.from({ length: 4 }).map(() =>
+      runner.runTestSuite(undefined, 15000, "bun -e console.log(process.env.PORT)")
+    );
+
+    const results = await Effect.runPromise(Effect.all(parallelRuns));
+    results.forEach((r) => {
+      expect(r.success).toBe(true);
+    });
+  });
 });

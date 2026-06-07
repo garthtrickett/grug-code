@@ -31,4 +31,20 @@ describe("Server Config Unit Checks", () => {
     expect(config.surgical.fileLimit).toBe(10);
     expect(config.surgical.tokenLimit).toBe(100000);
   });
+
+  it("should fall back to default surgical socket path when environment variables are omitted", async () => {
+    vi.stubEnv("SURGICAL_ROUTER_SOCKET_PATH", "");
+    vi.resetModules();
+    const { config } = await import("./Config.ts");
+    expect(config.surgical).toBeDefined();
+    expect(config.surgical.socketPath).toContain("grug.sock");
+  });
+
+  it("should correctly parse custom surgical socket path set via environment variables", async () => {
+    vi.stubEnv("SURGICAL_ROUTER_SOCKET_PATH", "/tmp/custom_grug_test.sock");
+    vi.resetModules();
+    const { config } = await import("./Config.ts");
+    expect(config.surgical).toBeDefined();
+    expect(config.surgical.socketPath).toBe("/tmp/custom_grug_test.sock");
+  });
 });

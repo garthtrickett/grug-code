@@ -4,15 +4,19 @@ import { McpService, McpServiceLive, McpLoggerLive } from "./McpServer.ts";
 import { PatchApplicationError } from "../AiderPatcher.ts";
 import * as fs from "node:fs/promises";
 
-const mockConnect = vi.fn().mockResolvedValue(undefined);
-const mockTools: Record<string, Function> = {};
-let passedServerInfo: any = null;
+const { mockConnect, mockTools, passedServerInfo } = vi.hoisted(() => {
+  return {
+    mockConnect: vi.fn().mockResolvedValue(undefined),
+    mockTools: {} as Record<string, Function>,
+    passedServerInfo: { value: null as any },
+  };
+});
 
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => {
   return {
     McpServer: class {
       constructor(public info: any) {
-        passedServerInfo = info;
+        passedServerInfo.value = info;
       }
       connect = mockConnect;
       tool(name: string, desc: string, schema: any, handler: Function) {
@@ -110,8 +114,8 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     return handler;
   };
 
-  it("should initialize with correct metadata config", () => {
-    expect(passedServerInfo).toEqual({
+    it("should initialize with correct metadata config", () => {
+    expect(passedServerInfo.value).toEqual({
       name: "grug-code-mcp",
       version: "0.1.0"
     });
