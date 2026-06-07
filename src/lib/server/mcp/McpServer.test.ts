@@ -93,7 +93,7 @@ vi.mock("../WorkspaceController.ts", () => {
 describe("McpServer Unit and Tool Integration Tests", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    passedServerInfo = null;
+    passedServerInfo.value = null;
 
     // Load/Register tools
     const initProgram = Effect.gen(function* () {
