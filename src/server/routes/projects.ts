@@ -73,12 +73,12 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     }
     return result.right;
   }, {
-    body: t.Object({
+        body: t.Object({
       name: t.String({ minLength: 1 }),
       root_path: t.String({ minLength: 1 }),
-      type_check_command: t.Optional(t.String()),
-      lint_command: t.Optional(t.String()),
-      test_command: t.Optional(t.String()),
+      type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
+      lint_command: t.Optional(t.Union([t.String(), t.Null()])),
+      test_command: t.Optional(t.Union([t.String(), t.Null()])),
     })
   })
   .put("/:id", async ({ params, body, runEffect, set }) => {
@@ -120,12 +120,12 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     }
     return result.right;
   }, {
-    body: t.Object({
+        body: t.Object({
       name: t.String({ minLength: 1 }),
       root_path: t.String({ minLength: 1 }),
-      type_check_command: t.Optional(t.String()),
-      lint_command: t.Optional(t.String()),
-      test_command: t.Optional(t.String()),
+      type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
+      lint_command: t.Optional(t.Union([t.String(), t.Null()])),
+      test_command: t.Optional(t.Union([t.String(), t.Null()])),
     })
   })
   .delete("/:id", async ({ params, runEffect, set }) => {

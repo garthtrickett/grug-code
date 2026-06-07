@@ -114,7 +114,7 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
     const deleteResult = await deleteRes.json() as any;
     expect(deleteResult.success).toBe(true);
 
-    // 6. Verify deleted (GET single 404)
+        // 6. Verify deleted (GET single 404)
     const singleAfterDeleteRes = await app.handle(
       new Request(`http://localhost/api/projects/${projectId}`, {
         method: "GET",
@@ -124,6 +124,32 @@ describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
       })
     );
     expect(singleAfterDeleteRes.status).toBe(404);
+  });
+
+  it("should successfully perform positive CRUD operations with some null fields", async () => {
+    const createRes = await app.handle(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          name: "Project Nullable Fields",
+          root_path: "/workspace/project-nullable-fields",
+          type_check_command: "tsc",
+          lint_command: null,
+          test_command: null,
+        }),
+      })
+    );
+
+    expect(createRes.status).toBe(200);
+    const createdProject = await createRes.json() as any;
+    expect(createdProject.id).toBeDefined();
+    expect(createdProject.name).toBe("Project Nullable Fields");
+    expect(createdProject.lint_command).toBeNull();
+    expect(createdProject.test_command).toBeNull();
   });
 
   it("should fail validation if required fields are empty", async () => {
