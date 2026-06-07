@@ -606,7 +606,7 @@ export function hello(name: string): string {
           reader.cancel().catch(() => {});
         }, 3000);
 
-        console.info("[Test:SSE] Starting stream read loop...");
+                console.info("[Test:SSE] Starting stream read loop...");
         while (!streamClosed) {
           console.info("[Test:SSE] Awaiting reader.read()...");
           const { value, done } = await reader.read();
@@ -623,6 +623,9 @@ export function hello(name: string): string {
             break;
           }
         }
+
+        console.info("[Test:SSE] Canceling reader to close the active connection...");
+        await reader.cancel();
 
         clearTimeout(timeoutId);
         expect(receivedText).toContain("data: Grug-SSE-Handshake-Success");

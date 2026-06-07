@@ -135,7 +135,7 @@ const mockBun = {
     const listenTarget = state.opts.unix || state.opts.port || 0;
     server.listen(listenTarget);
 
-    return {
+        return {
       get port(): number {
         const addr = server.address();
         return typeof addr === "object" && addr ? addr.port : 0;
@@ -144,6 +144,9 @@ const mockBun = {
         return "localhost";
       },
       stop: () => new Promise<void>((resolve) => {
+        if (typeof (server as any).closeAllConnections === "function") {
+          (server as any).closeAllConnections();
+        }
         server.close(() => {
           const unixPath = state.opts.unix;
           if (unixPath) {
