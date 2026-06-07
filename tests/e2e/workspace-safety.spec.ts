@@ -1,4 +1,5 @@
 import { test, expect } from "./utils/base-test";
+import { createTestProject, deleteTestProject } from "./utils/seed.ts";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { exec } from "node:child_process";
@@ -9,9 +10,10 @@ const execPromise = promisify(exec);
 test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
   let tempDir: string;
   let sessionToken: string;
+  let projectId: string;
 
-    test.beforeAll(async () => {
-    // Retrieve the active loopback authorization session token dynamically from workspace storage
+  test.beforeAll(async () => {
+    // Read local loopback session token securely
     const fileContent = await fs.readFile(".grug-session.json", "utf-8");
     const sessionData = JSON.parse(fileContent) as { token: string };
     sessionToken = sessionData.token;
@@ -51,9 +53,11 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
     );
     await execPromise("git add .", { cwd: tempDir });
     await execPromise("git commit -m 'Initial E2E Commit'", { cwd: tempDir });
+    projectId = await createTestProject("Safety Test Project", tempDir);
   });
 
   test.afterEach(async () => {
+    await deleteTestProject(projectId);
     // Revert directory safely and remove all testing artifacts
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
@@ -74,43 +78,43 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
     expect(body.error).toContain("Unauthorized");
   });
 
-      test("should load the PWA, extract the injected session token dynamically, and run transactions via UI", async ({ page }) => {
-      // 1. Load root page (dynamic meta tag is injected automatically by Elysia)
-      await page.goto("/");
+  test("should load the PWA, extract the injected session token dynamically, and run transactions via UI", async ({ page }) => {
+    // 1. Load root page (dynamic meta tag is injected automatically by Elysia)
+    await page.goto("/");
 
-      // 2. Hydrate only workspace scope and login token to bypass gate (grug-token is omitted)
-      await page.evaluate(({ cwd }) => {
-        localStorage.setItem("grug-cwd", cwd);
-        localStorage.setItem("jwt", "mock-auth-jwt");
-      }, { cwd: tempDir });
+    // 2. Hydrate only workspace scope and login token to bypass gate (grug-token is omitted)
+    await page.evaluate(({ cwd }) => {
+      localStorage.setItem("grug-cwd", cwd);
+      localStorage.setItem("jwt", "mock-auth-jwt");
+    }, { cwd: tempDir });
 
-      // 3. Reload page to initialize UI stores with loopback environment
-      await page.reload();
+    // 3. Reload page to initialize UI stores with loopback environment
+    await page.reload();
 
-      // 4. Assert Launch Form successfully mounted
-      const heading = page.locator("grug-task-board h2");
-      await expect(heading).toContainText("Launch Development Session");
+    // 4. Assert Launch Form successfully mounted
+    const heading = page.locator("grug-task-board h2");
+    await expect(heading).toContainText("Launch Development Session");
 
-      // 5. Fill fields to start a programmatic task transaction
-      await page.fill("input[name='description']", "Testing dynamic secure handshake");
-      await page.click("button[type='submit']");
+    // 5. Fill fields to start a programmatic task transaction
+    await page.fill("input[name='description']", "Testing dynamic secure handshake");
+    await page.click("button[type='submit']");
 
-      // 6. Assert proposal page transition
-      const proposalHeader = page.locator("grug-task-board h2");
-      await expect(proposalHeader).toContainText("Proposed Development Plan");
+    // 6. Assert proposal page transition
+    const proposalHeader = page.locator("grug-task-board h2");
+    await expect(proposalHeader).toContainText("Proposed Development Plan");
 
-      // 7. Click start transaction
-      await page.click("button:has-text('Approve & Start Task Transaction')");
+    // 7. Click start transaction
+    await page.click("button:has-text('Approve & Start Task Transaction')");
 
-      // 8. Assert success branch transition (proving token was securely read and mapped)
-      const txHeader = page.locator("grug-task-board h2");
-      await expect(txHeader).toContainText("Workspace Transaction:");
+    // 8. Assert success branch transition (proving token was securely read and mapped)
+    const txHeader = page.locator("grug-task-board h2");
+    await expect(txHeader).toContainText("Workspace Transaction:");
 
-      // 9. Cleanup task transaction cleanly
-      const abortBtn = page.locator("grug-task-board button:has-text('Abort Task')");
-      await abortBtn.click();
-      await expect(heading).toContainText("Launch Development Session");
-    });
+    // 9. Cleanup task transaction cleanly
+    const abortBtn = page.locator("grug-task-board button:has-text('Abort Task')");
+    await abortBtn.click();
+    await expect(heading).toContainText("Launch Development Session");
+  });
 
   test("should transaction branch, catch compilation failure, and abort/reset cleanly", async ({ request }) => {
     const taskId = `e2e-task-${crypto.randomUUID().slice(0, 8)}`;

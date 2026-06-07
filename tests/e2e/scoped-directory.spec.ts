@@ -1,4 +1,5 @@
 import { test, expect } from "./utils/base-test.ts";
+import { createTestProject, deleteTestProject } from "./utils/seed.ts";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { exec } from "node:child_process";
@@ -9,8 +10,9 @@ const execPromise = promisify(exec);
 test.describe("Grug Code Scoped Directory Selector E2E", () => {
   let tempDir: string;
   let sessionToken: string;
+  let projectId: string;
 
-    test.beforeAll(async () => {
+  test.beforeAll(async () => {
     // Read local loopback session token securely
     const fileContent = await fs.readFile(".grug-session.json", "utf-8");
     const sessionData = JSON.parse(fileContent) as { token: string };
@@ -44,9 +46,11 @@ test.describe("Grug Code Scoped Directory Selector E2E", () => {
     
     await execPromise("git add .", { cwd: tempDir });
     await execPromise("git commit -m 'E2E Init Scoped Commit'", { cwd: tempDir });
+    projectId = await createTestProject("Scoped Test Project", tempDir);
   });
 
   test.afterEach(async () => {
+    await deleteTestProject(projectId);
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
@@ -66,7 +70,7 @@ test.describe("Grug Code Scoped Directory Selector E2E", () => {
     const heading = page.locator("grug-task-board h2");
     await expect(heading).toContainText("Launch Development Session");
 
-        // 4. Click the directory scope trigger dropdown
+    // 4. Click the directory scope trigger dropdown
     const selectTrigger = page.locator("grug-task-board button#directory-scope-select-trigger");
     await expect(selectTrigger).toBeVisible();
     await selectTrigger.click();
@@ -79,24 +83,24 @@ test.describe("Grug Code Scoped Directory Selector E2E", () => {
     // 6. Assert trigger button updates to show selected scope name
     await expect(selectTrigger).toContainText("subapps/service");
 
-          // 7. Fill in task configuration parameters
-      await page.fill("input[name='description']", "Verify subfolder scoping");
+    // 7. Fill in task configuration parameters
+    await page.fill("input[name='description']", "Verify subfolder scoping");
 
-      // 8. Submit initialization form
-      await page.click("grug-task-board button[type='submit']");
+    // 8. Submit initialization form
+    await page.click("grug-task-board button[type='submit']");
 
-      // 9. Assert proposal page transition
-      const proposalHeader = page.locator("grug-task-board h2");
-      await expect(proposalHeader).toContainText("Proposed Development Plan");
+    // 9. Assert proposal page transition
+    const proposalHeader = page.locator("grug-task-board h2");
+    await expect(proposalHeader).toContainText("Proposed Development Plan");
 
-      // 10. Click start transaction
-      await page.click("button:has-text('Approve & Start Task Transaction')");
+    // 10. Click start transaction
+    await page.click("button:has-text('Approve & Start Task Transaction')");
 
-      // 11. Confirm active transaction screen is displayed
-      const txHeader = page.locator("grug-task-board h2");
-      await expect(txHeader).toContainText("Workspace Transaction:");
+    // 11. Confirm active transaction screen is displayed
+    const txHeader = page.locator("grug-task-board h2");
+    await expect(txHeader).toContainText("Workspace Transaction:");
 
-        // 12. Check branch configuration inside UI
+    // 12. Check branch configuration inside UI
     const ephemeralDetails = page.locator("grug-task-board p").filter({ hasText: "Ephemeral Branch" });
     await expect(ephemeralDetails).toContainText("grug-task/");
 

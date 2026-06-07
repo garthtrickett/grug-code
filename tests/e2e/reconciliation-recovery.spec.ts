@@ -1,4 +1,5 @@
 import { test, expect } from "./utils/base-test.ts";
+import { createTestProject, deleteTestProject } from "./utils/seed.ts";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { exec } from "node:child_process";
@@ -9,6 +10,7 @@ const execPromise = promisify(exec);
 test.describe("Grug Task Board - Transaction Reconciliation and Recovery E2E", () => {
   let tempDir: string;
   let sessionToken: string;
+  let projectId: string;
 
   test.beforeAll(async () => {
     // Read local loopback session token securely
@@ -37,9 +39,11 @@ test.describe("Grug Task Board - Transaction Reconciliation and Recovery E2E", (
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Original codebase line.\n");
     await execPromise("git add initial.txt", { cwd: tempDir });
     await execPromise("git commit -m 'E2E Init Commit'", { cwd: tempDir });
+    projectId = await createTestProject("Recovery Test Project", tempDir);
   });
 
   test.afterEach(async () => {
+    await deleteTestProject(projectId);
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 

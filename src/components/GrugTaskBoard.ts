@@ -655,10 +655,10 @@ export class GrugTaskBoard extends LitElement {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
         const name = (form.elements.namedItem("name") as HTMLInputElement).value;
-    const root_path = (form.elements.namedItem("root_path") as HTMLInputElement).value;
-    const type_check_command = (form.elements.namedItem("type_check_command") as HTMLInputElement).value || undefined;
-    const lint_command = (form.elements.namedItem("lint_command") as HTMLInputElement).value || undefined;
-    const test_command = (form.elements.namedItem("test_command") as HTMLInputElement).value || undefined;
+        const root_path = (form.elements.namedItem("root_path") as HTMLInputElement).value;
+    const type_check_command = (form.elements.namedItem("type_check_command") as HTMLInputElement).value || null;
+    const lint_command = (form.elements.namedItem("lint_command") as HTMLInputElement).value || null;
+    const test_command = (form.elements.namedItem("test_command") as HTMLInputElement).value || null;
 
     const data = { name, root_path, type_check_command, lint_command, test_command };
     const editProjId = this._editProjId;

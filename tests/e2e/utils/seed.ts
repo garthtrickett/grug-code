@@ -73,3 +73,19 @@ export const cleanupTestUser = async (data: { userId?: string }) => {
 };
 
 export const getTestConnectionString = () => connectionString;
+
+export const createTestProject = async (name: string, rootPath: string) => {
+  const projectId = randomUUID() as any;
+  await db.insertInto("project").values({
+    id: projectId,
+    name,
+    root_path: rootPath,
+    created_at: new Date(),
+    updated_at: new Date(),
+  }).execute();
+  return projectId;
+};
+
+export const deleteTestProject = async (projectId: string) => {
+  await db.deleteFrom("project").where("id", "=", projectId as any).execute();
+};
