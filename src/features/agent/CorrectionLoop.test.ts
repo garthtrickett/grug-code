@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect, Layer } from "effect";
 import { CorrectionLoop, CorrectionLoopLive } from "./CorrectionLoop.ts";
 import { AiService } from "../../lib/server/AiService.ts";
+import { broadcastProgress } from "../../lib/server/mcp/McpServer.ts";
 import type { GitTransaction } from "../../lib/server/WorkspaceController.ts";
 
 const mockApplyPatch = vi.fn();
@@ -41,6 +42,13 @@ const aiServiceMock = Layer.succeed(
   })
 );
 
+vi.mock("../../lib/server/mcp/McpServer.ts", () => {
+  return {
+    broadcastProgress: vi.fn(),
+    mcpTransports: new Map(),
+  };
+});
+
 describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
   const dummyTx: GitTransaction = {
     id: "test-correction-tx",
@@ -54,6 +62,45 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     vi.clearAllMocks();
     mockCreateWorktree.mockReturnValue(Effect.succeed("/mock/worktree/path"));
     mockDeleteWorktree.mockReturnValue(Effect.void);
+  });
+
+    it("should broadcast progress notifications during step verification", async () => {
+    mockApplyPatch.mockReturnValue(Effect.void);
+    mockRunTypeCheck.mockImplementation((tx, onStdout) => {
+      if (onStdout) onStdout("compiling src/math.ts...");
+      return Effect.succeed({ success: true, dirtyFiles: [] });
+    });
+    mockRunLintCheck.mockReturnValue(Effect.succeed({ success: true, dirtyFiles: [] }));
+    mockRunTestSuite.mockImplementation((tx, onStdout) => {
+      if (onStdout) onStdout("running math tests...");
+      return Effect.succeed({ success: true, dirtyFiles: [] });
+    });
+    mockCreateCheckpoint.mockImplementation((tx) => Effect.succeed(tx));
+
+    const program = Effect.flatMap(CorrectionLoop, (loop) =>
+      loop.runStep({
+        tx: dummyTx,
+        targetFiles: ["src/math.ts"],
+        instructions: JSON.stringify({ files: [] }),
+      })
+    ).pipe(
+      Effect.provide(CorrectionLoopLive),
+      Effect.provide(aiServiceMock)
+    );
+
+    await Effect.runPromise(program);
+
+    expect(broadcastProgress).toHaveBeenCalled();
+    expect(broadcastProgress).toHaveBeenCalledWith(
+      dummyTx.id,
+      "compiling src/math.ts...",
+      expect.any(Number)
+    );
+    expect(broadcastProgress).toHaveBeenCalledWith(
+      dummyTx.id,
+      "running math tests...",
+      expect.any(Number)
+    );
   });
 
   it("should exit successfully on immediate typecheck success without invoking AI", async () => {

@@ -28,52 +28,6 @@ const txSchema = t.Object({
 export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   .use(effectPlugin)
   .use(securityMiddleware)
-  .get("/progress", () => {
-    return { progress: "Grug working hard..." };
-  })
-  .get("/stream-progress", ({ set }) => {
-    set.headers["Content-Type"] = "text/event-stream";
-    set.headers["Cache-Control"] = "no-cache";
-    set.headers["Connection"] = "keep-alive";
-
-    let cleanupFn: (() => void) | null = null;
-
-    const stream = new ReadableStream({
-      start(controller) {
-        const listener = (data: string) => {
-          try {
-            controller.enqueue(`data: ${data}\n\n`);
-          } catch {}
-        };
-        progressBroadcaster.on("progress", listener);
-
-        // Keep-alive heartbeat tick
-        const interval = setInterval(() => {
-          try {
-            controller.enqueue(`data: heartbeat\n\n`);
-          } catch {}
-        }, 5000);
-
-        cleanupFn = () => {
-          clearInterval(interval);
-          progressBroadcaster.off("progress", listener);
-        };
-      },
-      cancel() {
-        if (cleanupFn) {
-          cleanupFn();
-        }
-      }
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
-    });
-  })
   .get("/status", async ({ query, runEffect, set }) => {
     const controller = makeWorkspaceController(query.cwd);
     const effect = controller.readTransactionState();

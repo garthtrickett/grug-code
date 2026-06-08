@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { Context, Effect, Layer, Logger } from "effect";
 import { z } from "zod";
 import { makeWorkspaceController } from "../WorkspaceController.ts";
@@ -37,6 +38,28 @@ const gitTransactionZodShape = {
   baseBranch: z.string(),
   ephemeralBranch: z.string(),
   checkpoints: z.array(z.string()),
+};
+
+export const mcpTransports = new Map<string, SSEServerTransport>();
+
+export const broadcastProgress = (progressToken: string, message: string, progress?: number, total?: number) => {
+  const notification = {
+    jsonrpc: "2.0" as const,
+    method: "notifications/progress" as const,
+    params: {
+      progressToken,
+      progress: progress ?? 0,
+      total,
+      message,
+    },
+  };
+  for (const transport of mcpTransports.values()) {
+    try {
+      void transport.send(notification);
+    } catch (e) {
+      console.error("[McpServer] Failed to send progress notification to transport:", e);
+    }
+  }
 };
 
 export const mcpServer = new McpServer({

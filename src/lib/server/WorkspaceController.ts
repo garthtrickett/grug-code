@@ -38,9 +38,21 @@ export interface WorkspaceController {
     initialTasks?: readonly PlanTask[]
   ) => Effect.Effect<GitTransaction, Error>;
   readonly applyPatch: (tx: GitTransaction, patch: string) => Effect.Effect<void, Error>;
-  readonly runTypeCheck: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
-  readonly runLintCheck: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
-  readonly runTestSuite: (tx: GitTransaction) => Effect.Effect<VerificationResult, Error>;
+  readonly runTypeCheck: (
+    tx: GitTransaction,
+    onStdout?: (data: string) => void,
+    onStderr?: (data: string) => void
+  ) => Effect.Effect<VerificationResult, Error>;
+  readonly runLintCheck: (
+    tx: GitTransaction,
+    onStdout?: (data: string) => void,
+    onStderr?: (data: string) => void
+  ) => Effect.Effect<VerificationResult, Error>;
+  readonly runTestSuite: (
+    tx: GitTransaction,
+    onStdout?: (data: string) => void,
+    onStderr?: (data: string) => void
+  ) => Effect.Effect<VerificationResult, Error>;
   readonly createCheckpoint: (
     tx: GitTransaction,
     message: string,
@@ -59,7 +71,7 @@ export interface WorkspaceController {
   readonly deleteWorktree: (tx: GitTransaction) => Effect.Effect<void, Error>;
 }
 
-const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, startupCommand?: string | null) =>
+const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, startupCommand?: string | null, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
   Effect.tryPromise({
     try: () => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
       let [command, ...cmdArgs] = args;
@@ -101,6 +113,7 @@ const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, 
             ? chunk
             : String(chunk);
         stdout += text;
+        if (onStdout) onStdout(text);
         progressBroadcaster.emit("progress", JSON.stringify({ type: "stdout", text }));
       });
       child.stderr?.on("data", (chunk: unknown) => {
@@ -110,6 +123,7 @@ const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, 
             ? chunk
             : String(chunk);
         stderr += text;
+        if (onStderr) onStderr(text);
         progressBroadcaster.emit("progress", JSON.stringify({ type: "stderr", text }));
       });
       child.on("close", (exitCode) => {

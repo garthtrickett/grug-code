@@ -6,6 +6,7 @@ import * as os from "node:os";
 import { SelfCorrectionError } from "../auth/Errors.ts";
 import { AiService } from "../../lib/server/AiService.ts";
 import { makeWorkspaceController } from "../../lib/server/WorkspaceController.ts";
+import { broadcastProgress } from "../../lib/server/mcp/McpServer.ts";
 import type { GitTransaction } from "../../lib/server/WorkspaceController.ts";
 import type { PlanTask } from "../../lib/shared/ai-schemas.ts";
 
@@ -130,13 +131,19 @@ export const CorrectionLoopLive = Layer.effect(
             Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply initial instructions patch: ${err.message}`, cause: err }))
           );
 
-          let aggregateAttempts = 0;
+                    let aggregateAttempts = 0;
           let verified = false;
+          let seqNum = 0;
+
+          const sendProgress = (text: string) => {
+            seqNum++;
+            broadcastProgress(tx.id, text, seqNum);
+          };
 
           while (!verified) {
             // 1. Run static typecheck in the worktree
             yield* Effect.logInfo(`[CorrectionLoop] Running typecheck (aggregate attempts: ${aggregateAttempts}/3)...`);
-            const typecheckResult = yield* worktreeController.runTypeCheck(tx).pipe(
+            const typecheckResult = yield* worktreeController.runTypeCheck(tx, sendProgress, sendProgress).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Typecheck execution failed: ${err.message}`, cause: err }))
             );
 
@@ -189,9 +196,9 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               continue;
             }
 
-            // 2. Run static lint check in the worktree
+                        // 2. Run static lint check in the worktree
             yield* Effect.logInfo(`[CorrectionLoop] Running lint check (aggregate attempts: ${aggregateAttempts}/3)...`);
-            const lintResult = yield* worktreeController.runLintCheck(tx).pipe(
+            const lintResult = yield* worktreeController.runLintCheck(tx, sendProgress, sendProgress).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Lint check execution failed: ${err.message}`, cause: err }))
             );
 
@@ -244,9 +251,9 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               continue;
             }
 
-            // 3. Run behavioral test suite in the worktree
+                        // 3. Run behavioral test suite in the worktree
             yield* Effect.logInfo(`[CorrectionLoop] Running behavioral tests (aggregate attempts: ${aggregateAttempts}/3)...`);
-            const testResult = yield* worktreeController.runTestSuite(tx).pipe(
+            const testResult = yield* worktreeController.runTestSuite(tx, sendProgress, sendProgress).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Test suite execution failed: ${err.message}`, cause: err }))
             );
 
