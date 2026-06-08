@@ -468,9 +468,70 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
       expect(err.message).toContain("Worktree preserved at:");
     }
 
-    expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(3);
+        expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(3);
     expect(mockApplyPatch).toHaveBeenCalledTimes(4); 
     expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
     expect(mockDeleteWorktree).not.toHaveBeenCalled();
+  });
+
+  it("should successfully handle and self-heal containerized execution failures", async () => {
+    mockApplyPatch.mockReturnValue(Effect.void);
+    mockRunLintCheck.mockReturnValue(Effect.succeed({ success: true, dirtyFiles: [] }));
+    mockRunTestSuite.mockReturnValue(Effect.succeed({ success: true, dirtyFiles: [] }));
+    mockCreateCheckpoint.mockImplementation((tx) => Effect.succeed(tx));
+
+    mockRunTypeCheck
+      .mockReturnValueOnce(
+        Effect.succeed({
+          success: false,
+          errorOutput: "docker: Error response from daemon: OOMKilled\nTS2322: Type 'string' is not assignable to type 'number'.",
+          dirtyFiles: [
+            {
+              filePath: "src/math.ts",
+              content: "const x: number = 'hello';",
+            },
+          ],
+        })
+      )
+      .mockReturnValueOnce(
+        Effect.succeed({
+          success: true,
+          dirtyFiles: [],
+        })
+      );
+
+    mockGenerateStructuredObject.mockReturnValue(
+      Effect.succeed({
+        summary: "Fix string assignment under containerized runner",
+        files: [
+          {
+            file_path: "src/math.ts",
+            code_diff: "<<<<<<< SEARCH\nconst x: number = 'hello';\n=======\nconst x: number = 42;\n>>>>>>> REPLACE",
+          },
+        ],
+      })
+    );
+
+    const program = Effect.flatMap(CorrectionLoop, (loop) =>
+      loop.runStep({
+        tx: dummyTx,
+        targetFiles: ["src/math.ts"],
+        instructions: JSON.stringify({ files: [] }),
+      })
+    ).pipe(
+      Effect.provide(CorrectionLoopLive),
+      Effect.provide(aiServiceMock)
+    );
+
+    const result = await Effect.runPromise(program);
+    expect(result).toEqual(dummyTx);
+
+    expect(mockRunTypeCheck).toHaveBeenCalledTimes(2);
+    expect(mockApplyPatch).toHaveBeenCalledTimes(2);
+    expect(mockGenerateStructuredObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("docker: Error response from daemon")
+      })
+    );
   });
 });
