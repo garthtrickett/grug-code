@@ -1,6 +1,5 @@
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { Effect } from "effect";
 import { runClientPromise } from "../runtime";
 import {
   taskStore,
@@ -20,16 +19,42 @@ import {
   isDiscussingSignal,
 } from "./taskStore";
 
-describe("taskStore - Client State Machine & Signal Coordinator", () => {
-  const originalFetch = global.fetch;
+const mockCallTool = vi.fn();
 
-    beforeEach(async () => {
+// Mock McpClientService at module level to intercept and provide mock layers
+vi.mock("../McpClientService.ts", () => {
+  const { Context, Layer, Effect } = require("effect");
+  const McpClientService = Context.GenericTag("app/McpClientService");
+  const McpClientLive = Layer.succeed(
+    McpClientService,
+    {
+      client: {},
+      connect: () => Effect.void,
+      callTool: (name: string, args: any) =>
+        Effect.gen(function* () {
+          const res = mockCallTool(name, args);
+          if (res && res.isError) {
+            return yield* Effect.fail(new Error(res.error || "Tool error"));
+          }
+          return res;
+        }),
+    }
+  );
+  return {
+    McpClientService,
+    McpClientLive,
+  };
+});
+
+describe("taskStore - Client State Machine & Signal Coordinator", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
     await runClientPromise(taskStore.clear());
     setGrugToken("mock-session-grug-token");
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    vi.restoreAllMocks();
   });
 
   it("should initialize default state correctly on clear", () => {
@@ -55,7 +80,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(document.querySelector('meta[name="grug-session-token"]')).toBeNull();
   });
 
-    it("should set up a task queue and branch checkouts programmatically on initTaskQueue", async () => {
+  it("should set up a task queue and branch checkouts programmatically on initTaskQueue", async () => {
     const mockTx = {
       id: "task-001",
       baseBranch: "main",
@@ -63,13 +88,11 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: [],
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockTx,
-    }) as any;
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockTx) }]
+    });
 
-        // Pause queue initially to prevent background autopilot run during initialization assertion
+    // Pause queue initially to prevent background autopilot run during initialization assertion
     isPausedSignal.value = true;
 
     const action = taskStore.initTaskQueue("task-001", "Create popup component", ["src/components/Popup.ts"]);
@@ -92,12 +115,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: [],
     };
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockTx,
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockTx) }]
     });
-    global.fetch = fetchSpy as any;
 
     const action = taskStore.initTaskQueue(
       "task-scoped-001",
@@ -108,18 +128,10 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     );
     await runClientPromise(action);
 
-    // Verify the mock fetch options are formatted properly
-    expect(fetchSpy).toHaveBeenCalled();
-    const fetchArgs = fetchSpy.mock.calls[0];
-    expect(fetchArgs).toBeDefined();
-    if (fetchArgs) {
-      const url = fetchArgs[0];
-      const options = fetchArgs[1] as any;
-      expect(url).toBe("/api/workspace/init");
-      const parsedBody = JSON.parse(options.body);
-      expect(parsedBody.cwd).toBe("/mock/cwd/src/components");
-      expect(parsedBody.taskId).toBe("task-scoped-001");
-    }
+    expect(mockCallTool).toHaveBeenCalledWith("git_init_tx", expect.objectContaining({
+      taskId: "task-scoped-001",
+      cwd: "/mock/cwd/src/components"
+    }));
   });
 
   it("should forward provider parameter correctly to init API endpoint", async () => {
@@ -131,12 +143,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       provider: "openai"
     };
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockTx,
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockTx) }]
     });
-    global.fetch = fetchSpy as any;
 
     const action = taskStore.initTaskQueue(
       "task-provider-001",
@@ -148,11 +157,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     );
     await runClientPromise(action);
 
-    expect(fetchSpy).toHaveBeenCalled();
-    const options = fetchSpy.mock.calls[0]?.[1] as any;
-    expect(options).toBeDefined();
-    const parsedBody = JSON.parse(options.body);
-    expect(parsedBody.provider).toBe("openai");
+    expect(mockCallTool).toHaveBeenCalledWith("git_init_tx", expect.objectContaining({
+      provider: "openai"
+    }));
   });
 
   it("should successfully trigger researchFeature and update planning signals", async () => {
@@ -168,11 +175,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       ],
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockResearchData,
-    }) as any;
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockResearchData) }]
+    });
 
     const action = taskStore.researchFeature("Adjust processing", "/mock/cwd", "src", "openai");
     const result = await runClientPromise(action);
@@ -191,11 +196,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       suggestedOptions: ["Implement option A", "Implement option B"],
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockDiscussionData,
-    }) as any;
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockDiscussionData) }]
+    });
 
     const action = taskStore.researchFeature(
       "Adjust processing",
@@ -233,22 +236,20 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: ["checkpoint-1", "checkpoint-2"],
     };
 
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => initTx,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => step1Tx,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => step2Tx,
-      }) as any;
+    mockCallTool.mockImplementation((name, args) => {
+      if (name === "git_init_tx") {
+        return { content: [{ type: "text", text: JSON.stringify(initTx) }] };
+      }
+      if (name === "execute_step") {
+        if (args.currentTaskId === "step-1") {
+          return { content: [{ type: "text", text: JSON.stringify(step1Tx) }] };
+        }
+        if (args.currentTaskId === "step-2") {
+          return { content: [{ type: "text", text: JSON.stringify(step2Tx) }] };
+        }
+      }
+      return { content: [] };
+    });
 
     const customSteps = [
       {
@@ -295,17 +296,15 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: [],
     };
 
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => initTx,
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        json: async () => ({ error: "Compilation error TS2322" }),
-      }) as any;
+    mockCallTool.mockImplementation((name) => {
+      if (name === "git_init_tx") {
+        return { content: [{ type: "text", text: JSON.stringify(initTx) }] };
+      }
+      if (name === "execute_step") {
+        return { isError: true, error: "Compilation error TS2322" };
+      }
+      return { content: [] };
+    });
 
     const customSteps = [
       {
@@ -344,7 +343,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(errorSignal.value).toBe("Compilation error TS2322");
   });
 
-    it("should initialize task queue with custom planned steps when provided", async () => { 
+  it("should initialize task queue with custom planned steps when provided", async () => { 
     const mockTx = {
       id: "task-002",
       baseBranch: "main",
@@ -352,11 +351,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: [],
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockTx,
-    }) as any;
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockTx) }]
+    });
 
     const customSteps = [
       {
@@ -388,11 +385,10 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
   });
 
   it("should handle error messages returned from failed workspace initializations", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: async () => ({ error: "Workspace is dirty. Stage or commit." }),
-    }) as any;
+    mockCallTool.mockReturnValue({
+      isError: true,
+      error: "Workspace is dirty. Stage or commit."
+    });
 
     const action = taskStore.initTaskQueue("task-failed", "Fail task", ["src/fail.ts"]);
     await expect(runClientPromise(action)).rejects.toThrow("Workspace is dirty. Stage or commit.");
@@ -403,31 +399,28 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
   });
 
   it("should pause and resume queue signals accurately", async () => {
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: "null" }]
+    });
+
     await runClientPromise(taskStore.pauseQueue());
     expect(isPausedSignal.value).toBe(true);
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: "task-resume" }),
-    }) as any;
 
     await runClientPromise(taskStore.resumeQueue());
     expect(isPausedSignal.value).toBe(false);
   });
 
-    it("should permit developers to edit individual task notes dynamically", async () => {
+  it("should permit developers to edit individual task notes dynamically", async () => {
     const mockTx = {
       id: "task-edit-notes",
       baseBranch: "main",
       ephemeralBranch: "grug-task/task-edit-notes",
       checkpoints: [],
     };
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => mockTx,
-    }) as any;
+
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: JSON.stringify(mockTx) }]
+    });
 
     // Pause queue to prevent background run during notes edit assertion
     isPausedSignal.value = true;
@@ -442,7 +435,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     }
   });
 
-    it("should support rolling back checkpoints and resetting pending status keys", async () => {
+  it("should support rolling back checkpoints and resetting pending status keys", async () => {
     const initTx = {
       id: "task-rb",
       baseBranch: "main",
@@ -456,17 +449,15 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: ["hash-1"],
     };
 
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => initTx,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => rolledBackTx,
-      }) as any;
+    mockCallTool.mockImplementation((name) => {
+      if (name === "git_init_tx") {
+        return { content: [{ type: "text", text: JSON.stringify(initTx) }] };
+      }
+      if (name === "git_rollback") {
+        return { content: [{ type: "text", text: JSON.stringify(rolledBackTx) }] };
+      }
+      return { content: [] };
+    });
 
     // Pause queue initially to prevent background autopilot run during testing
     isPausedSignal.value = true;
@@ -481,24 +472,23 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(activeTxSignal.value?.checkpoints.length).toBe(1);
   });
 
-    it("should support aborting active task and clearing out signals", async () => {
+  it("should support aborting active task and clearing out signals", async () => {
     const mockTx = {
       id: "task-abort",
       baseBranch: "main",
       ephemeralBranch: "grug-task/task-abort",
       checkpoints: [],
     };
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockTx,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ success: true }),
-      }) as any;
+
+    mockCallTool.mockImplementation((name) => {
+      if (name === "git_init_tx") {
+        return { content: [{ type: "text", text: JSON.stringify(mockTx) }] };
+      }
+      if (name === "git_abort") {
+        return { content: [{ type: "text", text: "success" }] };
+      }
+      return { content: [] };
+    });
 
     // Pause queue initially to prevent background autopilot run during testing
     isPausedSignal.value = true;
@@ -559,28 +549,20 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
 
     isPausedSignal.value = false;
 
-    const fetchSpy = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/workspace/status")) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => mockState,
-        });
+    mockCallTool.mockImplementation((name) => {
+      if (name === "git_get_status") {
+        return { content: [{ type: "text", text: JSON.stringify(mockState) }] };
       }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ ...mockState.tx, checkpoints: ["hash-rec-1", "hash-rec-2"] }),
-      });
+      if (name === "execute_step") {
+        return { content: [{ type: "text", text: JSON.stringify({ ...mockState.tx, checkpoints: ["hash-rec-1", "hash-rec-2"] }) }] };
+      }
+      return { content: [] };
     });
-    global.fetch = fetchSpy as any;
 
-    const action = taskStore.reconcileActiveTransaction("/mock/cwd");
+        const action = taskStore.reconcileActiveTransaction("/mock/cwd");
     await runClientPromise(action);
 
-        expect(activeTxSignal.value?.id).toBe("task-reconciled-999");
-    expect(activeTxSignal.value?.checkpoints).toEqual(["hash-rec-1"]);
-    
+    expect(activeTxSignal.value?.id).toBe("task-reconciled-999");
     expect(tasksSignal.value[0]?.status).toBe("completed");
 
     // Wait for the background queue to complete
@@ -589,8 +571,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
 
+    expect(activeTxSignal.value?.checkpoints).toEqual(["hash-rec-1", "hash-rec-2"]);
     expect(tasksSignal.value[1]?.status).toBe("completed");
-    expect(fetchSpy).toHaveBeenCalled();
+    expect(mockCallTool).toHaveBeenCalledWith("git_get_status", expect.any(Object));
   });
 
   it("should clear stale local transaction state when status returns null", async () => {
@@ -609,11 +592,9 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       checkpoints: [],
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => null,
-    }) as any;
+    mockCallTool.mockReturnValue({
+      content: [{ type: "text", text: "null" }]
+    });
 
     const action = taskStore.reconcileActiveTransaction();
     await runClientPromise(action);
