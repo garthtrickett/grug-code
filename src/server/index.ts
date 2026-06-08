@@ -13,7 +13,7 @@ import { workspaceRoutes } from "./routes/workspace.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { getActiveToken } from "./middleware/security.ts";
 
-import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr } from "../lib/server/mcp/McpServer.ts";
+import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr, mcpTransports } from "../lib/server/mcp/McpServer.ts";
 import { Effect } from "effect";
 import { config } from "../lib/server/Config";
 import * as path from "node:path";
@@ -22,8 +22,6 @@ import * as fs from "node:fs";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
-
-export const mcpTransports = new Map<string, SSEServerTransport>();
 
 export class ElysiaMockResponse extends ServerResponse {
   private controller: ReadableStreamDefaultController<string>;
