@@ -423,12 +423,23 @@ export function hello(name: string): string {
       expect(asyncRes.worktreePath).toBeDefined();
       expect(asyncRes.ephemeralBranch).toBe(tx.ephemeralBranch);
 
-      // Poll until the background task is fully executed and the worktree is cleanly unlinked on success
+            // Poll until the background task is fully executed and the worktree is cleanly unlinked on success
       const worktreePath = asyncRes.worktreePath;
+      let worktreeCreated = false;
+      for (let i = 0; i < 40; i++) {
+        const exists = await fs.stat(worktreePath).then(() => true).catch(() => false);
+        if (exists) {
+          worktreeCreated = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(worktreeCreated).toBe(true);
+
       let completed = false;
       for (let i = 0; i < 40; i++) {
-        const worktreeExists = await fs.stat(worktreePath).then(() => true).catch(() => false);
-        if (!worktreeExists) {
+        const exists = await fs.stat(worktreePath).then(() => true).catch(() => false);
+        if (!exists) {
           completed = true;
           break;
         }
