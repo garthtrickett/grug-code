@@ -24,6 +24,13 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 
+export interface CustomSSEServerTransport {
+  readonly sessionId: string;
+  send(message: unknown): Promise<void>;
+  handlePostMessage(req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void>;
+  _pendingRequests?: Map<string, (msg: unknown) => void>;
+}
+
 // Safe global-gated singleton to prevent duplicate Map instances across hot-reloads/bundling splits
 const globalForMcp = globalThis as unknown as {
   mcpTransports?: Map<string, SSEServerTransport>;
@@ -82,40 +89,43 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
     set.headers["Connection"] = "keep-alive";
     set.headers["X-Accel-Buffering"] = "no"; // Prevent connection buffering under proxy networks
 
-    let activeTransport: SSEServerTransport | null = null;
-    let heartbeatInterval: any = null;
+    let activeTransport: CustomSSEServerTransport | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | undefined = undefined;
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const mockRes = new ElysiaMockResponse(controller);
-        const transport = new SSEServerTransport("/api/mcp/messages", mockRes);
+        const transport = new SSEServerTransport("/api/mcp/messages", mockRes) as unknown as CustomSSEServerTransport;
         
         console.error(`[McpServer] 🟢 New SSE connection established. SessionId: "${transport.sessionId}"`);
         
         // Setup a safe thread-safe request registry directly on the transport instance
         const pendingRequests = new Map<string, (msg: unknown) => void>();
-        (transport as any)._pendingRequests = pendingRequests;
+        transport._pendingRequests = pendingRequests;
 
         const originalSend = transport.send.bind(transport);
-        transport.send = async (message: any) => {
-          if (message && typeof message === "object" && "id" in message) {
-            const reqId = String(message.id);
-            const resolver = pendingRequests.get(reqId);
-            if (resolver) {
-              resolver(message);
-              pendingRequests.delete(reqId);
+        transport.send = async (message: Parameters<SSEServerTransport["send"]>[0]) => {
+          if (message && typeof message === "object" && "id" in message && message.id !== undefined && message.id !== null) {
+            const rawId = (message as { id: unknown }).id;
+            const reqId = typeof rawId === "number" || typeof rawId === "string" ? String(rawId) : "";
+            if (reqId) {
+              const resolver = pendingRequests.get(reqId);
+              if (resolver) {
+                resolver(message);
+                pendingRequests.delete(reqId);
+              }
             }
           }
           return originalSend(message);
         };
 
-        mcpTransports.set(transport.sessionId, transport);
+        mcpTransports.set(transport.sessionId, transport as unknown as SSEServerTransport);
         activeTransport = transport;
 
         // Instantiate a fresh McpServer per SSE session to support multiple simultaneous connections
         const { createMcpServer } = await import("../lib/server/mcp/McpServer.ts");
         const mcpServerInstance = createMcpServer();
-        await mcpServerInstance.connect(transport);
+        await mcpServerInstance.connect(transport as unknown as SSEServerTransport);
 
         // Keep-alive heartbeat comment every 15 seconds to prevent browser/proxy timeouts
         const encoder = new TextEncoder();
@@ -135,7 +145,7 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
           console.error(`[McpServer] 🔴 SSE stream cancelled/closed prematurely for SessionId: "${activeTransport.sessionId}"`);
           try {
             mcpTransports.delete(activeTransport.sessionId);
-            void activeTransport.close();
+            void (activeTransport as unknown as SSEServerTransport).close();
           } catch {}
         }
       }
@@ -160,24 +170,24 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
       return { error: "Missing sessionId" };
     }
 
-    const transport = mcpTransports.get(sessionId);
+    const transport = mcpTransports.get(sessionId) as unknown as CustomSSEServerTransport | undefined;
     if (!transport) {
       console.error(`[McpServer] ❌ Session not found for sessionId: "${sessionId}". Active sessions:`, Array.from(mcpTransports.keys()));
       set.status = 404;
       return { error: "Session not found" };
     }
 
-    const hasId = body && typeof body === "object" && "id" in body;
-    const reqId = hasId ? String((body as any).id) : null;
+    const rawId = body && typeof body === "object" && "id" in body ? (body).id : null;
+    const reqId = typeof rawId === "number" || typeof rawId === "string" ? String(rawId) : null;
 
-    let resolveMessage: ((msg: unknown) => void) | null = null;
+    let resolveMessage: (msg: unknown) => void = () => {};
     let messagePromise: Promise<unknown> | null = null;
 
     if (reqId) {
       messagePromise = new Promise<unknown>((resolve) => {
         resolveMessage = resolve;
       });
-      const pendingMap = (transport as any)._pendingRequests;
+      const pendingMap = transport._pendingRequests;
       if (pendingMap) {
         pendingMap.set(reqId, resolveMessage);
       }
@@ -223,7 +233,7 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
       }
     } catch (err) {
       console.error(`[McpServer] ❌ Error in handlePostMessage:`, err);
-      const pendingMap = (transport as any)._pendingRequests;
+      const pendingMap = transport._pendingRequests;
       if (pendingMap && reqId) {
         pendingMap.delete(reqId);
       }

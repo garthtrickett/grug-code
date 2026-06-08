@@ -40,9 +40,7 @@ export const TreeSitterParserLive = Layer.effect(
   Effect.gen(function* () {
     yield* Effect.logInfo("[TreeSitterParser] Initializing tree-sitter WASM engine...");
 
-    const currentDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-
-        const webTreeSitterWasmPath = findWasmPath("web-tree-sitter", "tree-sitter.wasm", "../../../node_modules/web-tree-sitter/tree-sitter.wasm");
+    const webTreeSitterWasmPath = findWasmPath("web-tree-sitter", "tree-sitter.wasm", "../../../node_modules/web-tree-sitter/tree-sitter.wasm");
     yield* Effect.logInfo(`[TreeSitterParser] Loading web-tree-sitter WASM from path: ${webTreeSitterWasmPath}`);
 
     yield* Effect.tryPromise({ 

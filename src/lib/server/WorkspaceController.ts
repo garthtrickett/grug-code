@@ -813,7 +813,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         let tasks: readonly PlanTask[] | undefined;
         if (worktreeStateText) {
           try {
-            const parsed = JSON.parse(worktreeStateText);
+            const parsed = JSON.parse(worktreeStateText) as { readonly tasks?: readonly PlanTask[] };
             tasks = parsed.tasks;
           } catch {
             // ignore

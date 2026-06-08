@@ -42,7 +42,7 @@ export const McpClientLive = Layer.effect(
       // This completely bypasses Mixed Content security blocks in browser rendering engines.
       if (typeof window !== "undefined") {
         const host = window.location.hostname;
-        const isTauri = typeof (window as any).__TAURI__ !== "undefined" || window.location.protocol === "tauri:" || window.location.origin.includes("tauri");
+        const isTauri = typeof (window as unknown as { __TAURI__?: unknown }).__TAURI__ !== "undefined" || window.location.protocol === "tauri:" || window.location.origin.includes("tauri");
         if (!isTauri && (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]")) {
           return new URL("/api/mcp/sse", window.location.origin);
         }
@@ -71,9 +71,9 @@ export const McpClientLive = Layer.effect(
           const transport = new SSEClientTransport(sseUrl);
           client.connect(transport)
             .then(() => resolve())
-            .catch((err) => {
+            .catch((err: unknown) => {
               connectionPromise = null; // Clear the cached promise so retry works
-              reject(err);
+              reject(err instanceof Error ? err : new Error(String(err)));
             });
         });
 
