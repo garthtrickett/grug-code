@@ -1,4 +1,4 @@
-import { spawn, exec } from "node:child_process";
+import { exec } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Effect } from "effect";
@@ -396,14 +396,16 @@ Grug applied patch success.
 
       expect(mockSpawn).toHaveBeenCalled();
       const firstCall = mockSpawn.mock.calls[0];
-      expect(firstCall[0]).toBe("devcontainer");
-      expect(firstCall[1]).toEqual([
-        "exec",
-        "--workspace-folder",
-        absoluteTempDir,
-        "tsc",
-        "--noEmit"
-      ]);
+      if (firstCall) {
+        expect(firstCall[0]).toBe("devcontainer");
+        expect(firstCall[1]).toEqual([
+          "exec",
+          "--workspace-folder",
+          absoluteTempDir,
+          "tsc",
+          "--noEmit"
+        ]);
+      }
 
       await db.deleteFrom("project").where("id", "=", projectId).execute();
       await Effect.runPromise(controller.abortTransaction(tx));
@@ -438,18 +440,21 @@ Grug applied patch success.
 
       expect(mockSpawn).toHaveBeenCalled();
       const firstCall = mockSpawn.mock.calls[0];
-      expect(firstCall[0]).toBe("docker");
-      expect(firstCall[1]).toEqual([
-        "run",
-        "--rm",
-        "--network", "none",
-        "-v", "/nix/store:/nix/store:ro",
-        "-v", `${absoluteTempDir}:${absoluteTempDir}`,
-        "-w", absoluteTempDir,
-        "alpine",
-        "tsc",
-        "--noEmit"
-      ]);
+      if (firstCall)
+      {
+        expect(firstCall[0]).toBe("docker");
+        expect(firstCall[1]).toEqual([
+          "run",
+          "--rm",
+          "--network", "none",
+          "-v", "/nix/store:/nix/store:ro",
+          "-v", `${absoluteTempDir}:${absoluteTempDir}`,
+          "-w", absoluteTempDir,
+          "alpine",
+          "tsc",
+          "--noEmit"
+        ]);
+      }
 
       execSyncSpy.mockRestore();
       await fs.unlink(path.join(tempDir, "flake.nix")).catch(() => {});
@@ -479,8 +484,11 @@ Grug applied patch success.
 
       expect(mockSpawn).toHaveBeenCalled();
       const firstCall = mockSpawn.mock.calls[0];
-      expect(firstCall[0]).toBe("tsc");
-      expect(firstCall[1]).toEqual(["--noEmit"]);
+      if (firstCall)
+      {
+        expect(firstCall[0]).toBe("tsc");
+        expect(firstCall[1]).toEqual(["--noEmit"]);
+      }
 
       await db.deleteFrom("project").where("id", "=", projectId).execute();
       await Effect.runPromise(controller.abortTransaction(tx));
