@@ -325,8 +325,8 @@ if (shouldRunServers) {
     app.listen({ unix: socketPath });
     console.info(`🦊 Elysia is running on UDS socket at ${socketPath}`);
   } else {
-    const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
-    app.listen(port);
+        const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
+    app.listen({ port, hostname: "127.0.0.1" });
     console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
   }
 }

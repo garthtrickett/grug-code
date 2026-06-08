@@ -306,9 +306,9 @@ if (import.meta.main) {
       console.error("[Daemon] Stdio server failed:", err);
     });
   } else {
-    const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : config.network.daemonPort;
+        const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : config.network.daemonPort;
     const app = createDaemonApp();
-    app.listen(port);
-    console.error(`[Daemon] Elysia server is running at http://localhost:${port}`);
+    app.listen({ port, hostname: "127.0.0.1" });
+    console.error(`[Daemon] Elysia server is running at http://127.0.0.1:${port}`);
   }
 }

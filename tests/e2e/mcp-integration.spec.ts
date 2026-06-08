@@ -1,7 +1,6 @@
 import { test, expect } from "./utils/base-test.ts";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
-import fsSync from "node:fs";
 import * as path from "node:path";
 import * as http from "node:http";
 import { ReadableStream, type ReadableStreamDefaultController } from "node:stream/web";
@@ -134,11 +133,23 @@ const customFetch = async (
 
 globalThis.fetch = Object.assign(customFetch, originalFetch);
 
-interface McpResponse {
-  jsonrpc: string;
-  result?: {
-    protocolVersion?: string;
-    content?: Array<{ text?: string }>;
+interface McpToolCallResult {
+  readonly jsonrpc: string;
+  readonly result?: {
+    readonly content?: ReadonlyArray<{
+      readonly type: "text";
+      readonly text?: string;
+    }>;
+  };
+}
+
+interface McpToolListResult {
+  readonly jsonrpc: string;
+  readonly result?: {
+    readonly tools?: ReadonlyArray<{
+      readonly name: string;
+      readonly description?: string;
+    }>;
   };
 }
 
@@ -168,7 +179,7 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     await execPromise("git", ["commit", "-m", "Initial commit"]);
   });
 
-    test.afterEach(async () => {
+  test.afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
@@ -218,7 +229,7 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       body: JSON.stringify(initializeRequest),
     });
     expect(initPostResponse.status).toBe(200);
-    const initResult = await initPostResponse.json();
+    const initResult = await initPostResponse.json() as McpToolCallResult;
     expect(initResult.jsonrpc).toBe("2.0");
 
     // 3. Call list_directories tool
@@ -242,12 +253,12 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       body: JSON.stringify(callToolsRequest),
     });
     expect(callPostResponse.status).toBe(200);
-    const toolResult = await callPostResponse.json(); 
+    const toolResult = await callPostResponse.json() as McpToolCallResult;
     expect(toolResult.jsonrpc).toBe("2.0");
     expect(toolResult.result?.content?.[0]?.text).toBeDefined();
 
     // Verify directory lists 'main.ts'
-    const textData = toolResult.result.content[0].text;
+    const textData = toolResult.result?.content?.[0]?.text ?? "";
     expect(textData).toContain("main.ts");
 
     await reader.cancel();
@@ -303,13 +314,13 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     });
 
     expect(toolsResponse.status).toBe(200);
-    const toolsResult = await toolsResponse.json();
+    const toolsResult = await toolsResponse.json() as McpToolListResult;
     expect(toolsResult.jsonrpc).toBe("2.0");
 
     const tools = toolsResult.result?.tools || [];
-    expect(tools.some((t: any) => t.name === "list_directories")).toBe(true);
-    expect(tools.some((t: any) => t.name === "read_file_content")).toBe(true);
+    expect(tools.some((t) => t.name === "list_directories")).toBe(true);
+    expect(tools.some((t) => t.name === "read_file_content")).toBe(true);
 
     await reader.cancel();
   });
-  });
+});

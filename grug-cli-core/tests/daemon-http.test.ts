@@ -11,26 +11,26 @@ describe("Daemon HTTP Endpoints", () => {
     }
   });
 
-  it("should start Elysia app on a random port, respond to /api/health, and close cleanly", async () => {
+    it("should start Elysia app on a random port, respond to /api/health, and close cleanly", async () => {
     appInstance = createDaemonApp();
-    await appInstance.listen(0);
+    await appInstance.listen({ port: 0, hostname: "127.0.0.1" });
 
     const port = appInstance.server?.port;
     expect(port).toBeGreaterThan(0);
 
-    const response = await fetch(`http://localhost:${port}/api/health`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`);
     expect(response.status).toBe(200);
 
     const data = await response.json();
     expect(data).toEqual({ status: "ok", service: "grug-cli-daemon" });
   });
 
-  it("should return preferences at /api/preferences", async () => {
+    it("should return preferences at /api/preferences", async () => {
     appInstance = createDaemonApp();
-    await appInstance.listen(0);
+    await appInstance.listen({ port: 0, hostname: "127.0.0.1" });
 
     const port = appInstance.server?.port;
-    const response = await fetch(`http://localhost:${port}/api/preferences`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/preferences`);
     expect(response.status).toBe(200);
 
     const data = await response.json();
@@ -39,12 +39,12 @@ describe("Daemon HTTP Endpoints", () => {
     expect(data.enforceMasteryGates).toBe(true);
   });
 
-  it("should return mock profile at /api/auth/me", async () => {
+    it("should return mock profile at /api/auth/me", async () => {
     appInstance = createDaemonApp();
-    await appInstance.listen(0);
+    await appInstance.listen({ port: 0, hostname: "127.0.0.1" });
 
     const port = appInstance.server?.port;
-    const response = await fetch(`http://localhost:${port}/api/auth/me`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/auth/me`);
     expect(response.status).toBe(200);
 
     const data = await response.json();

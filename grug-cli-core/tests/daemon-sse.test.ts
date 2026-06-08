@@ -11,14 +11,14 @@ describe("Daemon MCP SSE Transport", () => {
     }
   });
 
-  it("should establish SSE transport, complete initialization handshake, and list registered tools", async () => {
+    it("should establish SSE transport, complete initialization handshake, and list registered tools", async () => {
     appInstance = createDaemonApp();
-    await appInstance.listen(0);
+    await appInstance.listen({ port: 0, hostname: "127.0.0.1" });
 
     const port = appInstance.server?.port;
     expect(port).toBeGreaterThan(0);
 
-    const sseResponse = await fetch(`http://localhost:${port}/api/mcp/sse`);
+    const sseResponse = await fetch(`http://127.0.0.1:${port}/api/mcp/sse`);
     expect(sseResponse.status).toBe(200);
     expect(sseResponse.headers.get("Content-Type")).toContain("text/event-stream");
 
@@ -52,7 +52,7 @@ describe("Daemon MCP SSE Transport", () => {
       }
     };
 
-    const initResponse = await fetch(`http://localhost:${port}/api/mcp/messages?sessionId=${sessionId}`, {
+        const initResponse = await fetch(`http://127.0.0.1:${port}/api/mcp/messages?sessionId=${sessionId}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -71,7 +71,7 @@ describe("Daemon MCP SSE Transport", () => {
       method: "tools/list"
     };
 
-    const toolsResponse = await fetch(`http://localhost:${port}/api/mcp/messages?sessionId=${sessionId}`, {
+        const toolsResponse = await fetch(`http://127.0.0.1:${port}/api/mcp/messages?sessionId=${sessionId}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
