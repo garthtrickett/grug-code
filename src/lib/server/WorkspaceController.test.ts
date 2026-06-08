@@ -1,14 +1,23 @@
-const { mockSpawn, mockState } = vi.hoisted(() => ({
-  mockSpawn: vi.fn(),
-  mockState: { useMock: false }
-}));
+const { mockSpawn } = vi.hoisted(() => {
+  const fn = vi.fn();
+  fn.mockImplementation(() => {
+    const mockChild = new EventEmitter();
+    (mockChild as any).stdout = new EventEmitter();
+    (mockChild as any).stderr = new EventEmitter();
+    setTimeout(() => {
+      mockChild.emit("close", 0);
+    }, 10);
+    return mockChild as any;
+  });
+  return { mockSpawn: fn };
+});
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return {
     ...actual,
     spawn: (command: string, args: any, options: any) => {
-      if (mockState.useMock) {
+      if (command === "devcontainer" || command === "docker" || command === "tsc") {
         return mockSpawn(command, args, options);
       }
       return actual.spawn(command, args, options);
@@ -358,23 +367,9 @@ Grug applied patch success.
     }
   });
 
-            describe("Tier-Based Verification Routing", () => {
+                describe("Tier-Based Verification Routing", () => {
     beforeEach(() => {
-      mockState.useMock = true;
-      mockSpawn.mockImplementation((command: string, args: any, options: any) => {
-        const mockChild = new EventEmitter();
-        (mockChild as any).stdout = new EventEmitter();
-        (mockChild as any).stderr = new EventEmitter();
-        setTimeout(() => {
-          mockChild.emit("close", 0);
-        }, 10);
-        return mockChild as any;
-      });
-    });
-
-    afterEach(() => {
-      mockState.useMock = false;
-      mockSpawn.mockReset();
+      mockSpawn.mockClear();
     });
 
     it("should route to Tier 1 (Dev Container) when uses_devcontainer is true", async () => {
