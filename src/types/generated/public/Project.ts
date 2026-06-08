@@ -24,7 +24,9 @@ export default interface ProjectTable {
 
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>;
 
-  startup_command: ColumnType<string | null, string | null, string | null>;
+    startup_command: ColumnType<string | null, string | null, string | null>;
+
+  uses_devcontainer: ColumnType<boolean, boolean | undefined, boolean>;
 }
 
 export type Project = Selectable<ProjectTable>;

@@ -48,6 +48,86 @@ interface PlanningResult {
 
 export const runCli = () =>
   Effect.gen(function* () {
+    const args = process.argv.slice(2);
+    if (args[0] === "logs" || args[0] === "tail") {
+      const follow = args.includes("--follow") || args.includes("-f") || args[0] === "tail";
+      const taskIdArg = args.find(arg => arg !== "logs" && arg !== "tail" && arg !== "--follow" && arg !== "-f");
+
+      if (!taskIdArg) {
+        console.error("Error: Missing active taskId parameter.");
+        process.exit(1);
+      }
+
+      const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : 3010;
+
+      const logTailingEffect = Effect.gen(function* () {
+        const sseResponse = yield* Effect.tryPromise({
+          try: () => fetch(`http://localhost:${port}/api/mcp/sse`),
+          catch: (err) => new Error(`Daemon unreachable: ${String(err)}`)
+        });
+
+        if (!sseResponse.ok) {
+          return yield* Effect.fail(new Error("SSE connection failed"));
+        }
+
+        const reader = sseResponse.body?.getReader();
+        if (!reader) return yield* Effect.fail(new Error("Failed to get readable stream reader"));
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = yield* Effect.tryPromise({
+            try: () => reader.read(),
+            catch: (err) => new Error(`Stream read failure: ${String(err)}`)
+          });
+
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data: ")) {
+              const dataStr = trimmed.slice(6);
+              if (dataStr === "heartbeat") continue;
+              try {
+                const parsed = JSON.parse(dataStr) as Record<string, unknown>;
+                if (
+                  parsed &&
+                  parsed.method === "notifications/progress" &&
+                  parsed.params &&
+                  typeof parsed.params === "object"
+                ) {
+                  const params = parsed.params as Record<string, unknown>;
+                  if (params.progressToken === taskIdArg && typeof params.message === "string") {
+                    process.stdout.write(params.message);
+                  }
+                }
+              } catch {
+                // Ignore malformed or unrelated frames
+              }
+            }
+          }
+
+          if (!follow) {
+            break;
+          }
+        }
+      });
+
+      yield* logTailingEffect.pipe(
+        Effect.catchAll((err) => Effect.sync(() => {
+          console.error(`Error: ${err.message}`);
+          process.exit(1);
+        }))
+      );
+
+      process.exit(0);
+    }
+
     p.intro("🥟 Grug Code CLI Companion");
 
     let promptArg = process.argv.slice(2).join(" ").trim();
@@ -338,7 +418,7 @@ export const runCli = () =>
             if (response.ok) {
               const bgData = yield* Effect.promise(() => response.json() as Promise<{ worktreePath: string; ephemeralBranch: string }>);
               p.note(
-                `Worktree Path: ${bgData.worktreePath}\nEphemeral Branch: ${bgData.ephemeralBranch}\n\nTo tail the live execution logs, run:\nbun run src/server/index.ts --mcp\n(or query the SSE stream at http://localhost:${port}/api/workspace/stream-progress)`,
+                `Worktree Path: ${bgData.worktreePath}\nEphemeral Branch: ${bgData.ephemeralBranch}\n\nTo tail the live execution logs, run:\nbun run grug-cli-core/src/cli.ts logs --follow ${tx.id}`,
                 "🚀 Background Task Spawned Successfully"
               );
               p.outro("🎉 Grug Code background task detached cleanly! Shell released.");

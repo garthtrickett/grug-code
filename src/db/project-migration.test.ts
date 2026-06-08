@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { db } from "./client";
 import type { ProjectId } from "../types";
+import { Migrator } from "kysely";
+import { migrationObjects } from "./migrations/migrations-manifest";
 
 describe("Project Database Schema and Migration", () => {
   it("should successfully insert, query, update, and delete project rows", async () => {
@@ -34,8 +36,9 @@ describe("Project Database Schema and Migration", () => {
     expect(project?.root_path).toBe("/workspace/grug-code-test-project");
     expect(project?.type_check_command).toBe("tsc --noEmit");
     expect(project?.lint_command).toBe("eslint .");
-    expect(project?.test_command).toBe("vitest run");
+        expect(project?.test_command).toBe("vitest run");
     expect(project?.startup_command).toBe("nix develop");
+    expect(project?.uses_devcontainer).toBe(false);
     expect(project?.created_at).toBeInstanceOf(Date);
     expect(project?.updated_at).toBeInstanceOf(Date);
 
@@ -46,6 +49,7 @@ describe("Project Database Schema and Migration", () => {
         name: "Grug Code Updated Project",
         test_command: "vitest run --coverage",
         startup_command: "nix develop --command",
+        uses_devcontainer: true,
         updated_at: new Date(),
       })
       .where("id", "=", projectId)
@@ -59,6 +63,7 @@ describe("Project Database Schema and Migration", () => {
 
     expect(updatedProject?.name).toBe("Grug Code Updated Project");
     expect(updatedProject?.test_command).toBe("vitest run --coverage");
+    expect(updatedProject?.uses_devcontainer).toBe(true);
 
     // 4. Delete
     await db
@@ -72,6 +77,31 @@ describe("Project Database Schema and Migration", () => {
       .where("id", "=", projectId)
       .executeTakeFirst();
 
-    expect(deletedProject).toBeUndefined();
+        expect(deletedProject).toBeUndefined();
+  });
+
+  it("should apply and roll back the uses_devcontainer migration without breaking database integrity", async () => {
+    const migrator = new Migrator({
+      db,
+      provider: {
+        getMigrations: () => Promise.resolve(migrationObjects),
+      },
+    });
+
+    const downResult = await migrator.migrateDown();
+    expect(downResult.error).toBeUndefined();
+
+    const tableMetadataAfterDown = await db.introspection.getTables();
+    const projectTableAfterDown = tableMetadataAfterDown.find(t => t.name === "project");
+    const columnExistsAfterDown = projectTableAfterDown?.columns.some(c => c.name === "uses_devcontainer");
+    expect(columnExistsAfterDown).toBe(false);
+
+    const upResult = await migrator.migrateToLatest();
+    expect(upResult.error).toBeUndefined();
+
+    const tableMetadataAfterUp = await db.introspection.getTables();
+    const projectTableAfterUp = tableMetadataAfterUp.find(t => t.name === "project");
+    const columnExistsAfterUp = projectTableAfterUp?.columns.some(c => c.name === "uses_devcontainer");
+    expect(columnExistsAfterUp).toBe(true);
   });
 });

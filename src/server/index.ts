@@ -15,9 +15,6 @@ import { getActiveToken } from "./middleware/security.ts";
 
 import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr, mcpTransports } from "../lib/server/mcp/McpServer.ts";
 import { Effect } from "effect";
-import { config } from "../lib/server/Config";
-import * as path from "node:path";
-import * as fs from "node:fs";
 
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { IncomingMessage, ServerResponse } from "node:http";
@@ -313,8 +310,6 @@ export const app = new Elysia({
     return "Development Server: Build output is not present in `./dist`. Use the Vite dev server on port 3000.";
   });
 
-
-
 const shouldRunServers = 
   process.env.NODE_ENV !== "test" && 
   !process.env.VITEST && 
@@ -327,3 +322,4 @@ if (shouldRunServers) {
 }
 
 export type App = typeof app;
+export const udsApp = app;

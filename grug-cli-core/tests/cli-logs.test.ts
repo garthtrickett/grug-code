@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { runCli } from "../src/cli.ts";
+import { ProjectStructureMapperLive } from "../src/features/ProjectStructureMapper.ts";
+import { ResearchLoopLive } from "../src/features/ResearchLoop.ts";
+import { AiServiceLive } from "../src/lib/AiService.ts";
+import { TreeSitterParserLive } from "../src/lib/TreeSitterParser.ts";
+import { SurgicalRouterLive } from "../src/features/SurgicalRouter.ts";
+import { TokenEstimatorLive } from "../src/lib/TokenEstimator.ts";
 
 vi.mock("@clack/prompts", () => {
   return {
@@ -104,7 +110,19 @@ describe("Interactive CLI Logs Tailing", () => {
       return Promise.resolve({ ok: false, status: 404 });
     }) as any;
 
-    await Effect.runPromise(runCli());
+    const testRuntime = SurgicalRouterLive.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(
+          ProjectStructureMapperLive,
+          ResearchLoopLive,
+          AiServiceLive,
+          TreeSitterParserLive,
+          TokenEstimatorLive
+        )
+      )
+    );
+
+    await Effect.runPromise(runCli().pipe(Effect.provide(testRuntime)));
 
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/mcp/sse"));
     expect(process.stdout.write).toHaveBeenCalled();

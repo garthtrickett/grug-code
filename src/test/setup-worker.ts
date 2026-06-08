@@ -5,7 +5,6 @@ import { closeCentralDb } from "../db/client";
 import * as fs from "node:fs/promises";
 import * as http from "node:http";
 import * as fsSync from "node:fs";
-import { ReadableStream, type ReadableStreamDefaultController } from "node:stream/web";
 
 // Safe cross-runtime Bun polyfill for Vitest running under Node
 class MockGlob {

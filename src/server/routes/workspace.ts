@@ -44,6 +44,54 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
+  .get("/stream-progress", ({ set }) => {
+    set.headers["Content-Type"] = "text/event-stream";
+    set.headers["Cache-Control"] = "no-cache";
+    set.headers["Connection"] = "keep-alive";
+
+    let cleanupFn: (() => void) | undefined;
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const listener = (data: string) => {
+          try {
+            controller.enqueue(`data: ${data}\n\n`);
+          } catch {
+            // ignore stream write errors
+          }
+        };
+
+        progressBroadcaster.on("progress", listener);
+
+        // Keep connection alive with heartbeat
+        const interval = setInterval(() => {
+          try {
+            controller.enqueue("data: heartbeat\n\n");
+          } catch {
+            // ignore
+          }
+        }, 15000);
+
+        cleanupFn = () => {
+          progressBroadcaster.off("progress", listener);
+          clearInterval(interval);
+        };
+      },
+      cancel() {
+        if (cleanupFn) {
+          cleanupFn();
+        }
+      }
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+      }
+    });
+  })
   .post("/directories", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
     const effect = controller.listDirectories();

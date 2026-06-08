@@ -3,7 +3,6 @@ import type { VerificationResult, DirtyFile } from "./WorkspaceController";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import { progressBroadcaster } from "./WorkspaceController";
-import { config } from "./Config";
 
 export interface CommandOptions {
   readonly cwd?: string;

@@ -5,6 +5,7 @@ import * as m02 from "../../migrations/02_add_hlc_columns";
 import * as m03 from "../../migrations/03_add_sync_epoch";
 import * as m04 from "../../migrations/04_create_projects";
 import * as m05 from "../../migrations/05_add_project_startup_command";
+import * as m06 from "../../migrations/06_add_project_uses_devcontainer";
 
 export const migrationObjects: Record<string, Migration> = {
   "00_init_db": { up: m00.up, down: m00.down },
@@ -13,4 +14,5 @@ export const migrationObjects: Record<string, Migration> = {
   "03_add_sync_epoch": { up: m03.up, down: m03.down },
   "04_create_projects": { up: m04.up, down: m04.down },
   "05_add_project_startup_command": { up: m05.up, down: m05.down },
+  "06_add_project_uses_devcontainer": { up: m06.up, down: m06.down },
 };
