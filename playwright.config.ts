@@ -39,9 +39,9 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
+    webServer: {
     command: "./dist/grug-daemon",
-    url: "http://127.0.0.1:42069",
+    url: "http://127.0.0.1:42069/api/health",
     reuseExistingServer: !process.env.CI,
     stdout: "pipe",
     stderr: "pipe",

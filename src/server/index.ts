@@ -229,10 +229,21 @@ export const app = new Elysia({
   }
 })
   .onError(({ code, error, request }) => {
-    console.error(`[Global Error] ${String(request.method)} ${String(request.url)} - ${String(code)}`, error);
+    console.error(`❌ [Global Error] ${String(request.method)} ${String(request.url)} - ${String(code)}:`, error);
   })
   .onRequest(({ request }) => {
-    console.info(`📡 [HTTP] ${String(request.method)} ${String(request.url)}`);
+    console.error(`📡 [HTTP Request Started] ${String(request.method)} ${String(request.url)}`);
+  })
+  .onAfterResponse(({ request, set }) => {
+    console.error(`✅ [HTTP Response Finished] ${String(request.method)} ${String(request.url)} -> Status ${set.status}`);
+  })
+  .get("/api/health", () => {
+    console.error("📡 [API Health GET] Responding with 200 OK");
+    return { status: "ok", service: "grug-cli-daemon" };
+  })
+  .head("/api/health", () => {
+    console.error("📡 [API Health HEAD] Responding with 200 OK");
+    return new Response(null, { status: 200 });
   })
   .use(cors({
     origin: [
