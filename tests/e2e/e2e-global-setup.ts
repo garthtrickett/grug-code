@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { Kysely, PostgresDialect, Migrator } from "kysely";
 import { migrationObjects } from "../../src/db/migrations/migrations-manifest.ts";
 import type { Database } from "../../src/types/index.ts";
+import { execSync } from "node:child_process";
 
 config({ path: ".env" });
 
@@ -21,6 +22,15 @@ function getConnectionString(dbName: string) {
 
 export default async function globalSetup() {
   console.info("⚡ [E2E GlobalSetup] Preparing E2E Test Database...");
+
+  try {
+    console.info("🧹 [E2E GlobalSetup] Cleaning up any stale background processes on port 42069...");
+    if (process.platform !== "win32") {
+      execSync("kill -9 $(lsof -t -i:42069) 2>/dev/null || fuser -k 42069/tcp 2>/dev/null || true");
+    }
+  } catch (e) {
+    // Ignore cleanup errors
+  }
 
   const base =
     process.env.DATABASE_URL_TEST ||
