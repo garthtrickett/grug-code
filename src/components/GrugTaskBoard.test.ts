@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// @ts-ignore
 import { JSDOM } from "jsdom";
 import * as nodeCrypto from "node:crypto";
 
@@ -21,9 +20,31 @@ if (typeof globalThis.crypto === "undefined" || !globalThis.crypto.randomUUID) {
 
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from "vitest";
+import { Effect } from "effect";
 import { projectStore } from "../lib/client/stores/projectStore.ts";
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const mockCallTool = vi.fn();
+
+// Mock McpClientService at module level to intercept and provide mock layers
+vi.mock("../lib/client/McpClientService.ts", () => {
+  const { Context, Layer, Effect } = require("effect");
+  const McpClientService = Context.GenericTag("app/McpClientService");
+  const McpClientLive = Layer.succeed(
+    McpClientService,
+    {
+      client: {},
+      connect: () => Effect.void,
+      callTool: (name: string, args: any) =>
+        Effect.sync(() => mockCallTool(name, args)),
+    }
+  );
+  return {
+    McpClientService,
+    McpClientLive,
+  };
+});
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   let element: any;
@@ -42,6 +63,8 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   let discussionTextSignal: any;
   let suggestedOptionsSignal: any;
   let isDiscussingSignal: any;
+
+  const originalFetch = globalThis.fetch;
 
   beforeAll(async () => {
     const storeMod = await import("../lib/client/stores/taskStore");
@@ -65,12 +88,51 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
   });
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     await runClientPromise(taskStore.clear());
     const projMod = await import("../lib/client/stores/projectStore");
     await runClientPromise(projMod.projectStore.clear());
+
+    // Provide default tool mock implementations to prevent test crashes
+    mockCallTool.mockImplementation((name, args) => {
+      if (name === "list_directories") {
+        return {
+          content: [{ type: "text", text: "[\"apps/web\", \"packages/core\"]" }]
+        };
+      }
+      if (name === "git_get_status") {
+        return {
+          content: [{ type: "text", text: "null" }]
+        };
+      }
+      return { content: [] };
+    });
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/projects")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [],
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+    }) as any;
+
     element = document.createElement("grug-task-board");
     document.body.appendChild(element);
     await tick();
+  });
+
+  afterEach(() => {
+    if (element) {
+      element.remove();
+    }
+    globalThis.fetch = originalFetch;
   });
 
   it("should render the AI provider select dropdown inside launch form", async () => {
@@ -153,6 +215,15 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
       }
     ];
 
+    mockCallTool.mockImplementation((name, args) => {
+      if (name === "git_init_tx") {
+        return {
+          content: [{ type: "text", text: "{\"id\":\"test-tx\",\"baseBranch\":\"main\",\"ephemeralBranch\":\"grug-task/test-tx\",\"checkpoints\":[]}" }]
+        };
+      }
+      return { content: [] };
+    });
+
     await element.updateComplete;
     await tick();
 
@@ -210,12 +281,6 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     discussionTextSignal.value = "";
     suggestedOptionsSignal.value = [];
     discussionHistorySignal.value = [];
-  });
-
-  afterEach(() => {
-    if (element) {
-      element.remove();
-    }
   });
 
   it("should render the initialization form when activeTxSignal is null", async () => {

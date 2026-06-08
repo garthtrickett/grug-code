@@ -667,15 +667,13 @@ export class GrugTaskBoard extends LitElement {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     
-
-
-const getVal = (name: string): string => {
-  const el = form.querySelector(`[name="${name}"]`);
-  if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) {
-    return el.value;
-  }
-  return "";
-};
+    const getVal = (name: string): string => {
+      const el = form.querySelector(`[name="${name}"]`);
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) {
+        return el.value;
+      }
+      return "";
+    };
 
     const name = getVal("name");
     const root_path = getVal("root_path");
@@ -819,7 +817,7 @@ const getVal = (name: string): string => {
                       <button
                         type="button"
                         @click=${this.handleCancelProposal}
-                        class="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
+                        class="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-855 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -887,7 +885,7 @@ const getVal = (name: string): string => {
                       </button>
                       <button
                         @click=${this.handleCancelProposal}
-                        class="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
+                        class="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-855 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -906,10 +904,10 @@ const getVal = (name: string): string => {
                     ${this.renderProjectConfig()}
 
                     <form @submit=${this.handleInitSubmit} class="space-y-4">
-                      <!-- Step 5 Active Project Workspace Selector -->
+                      <!-- Active Project Workspace Selector -->
                       ${this.renderProjectSelect()}
 
-                      <!-- Zag.js Workspace Directory Scoping -->
+                      <!-- Workspace Directory Scoping -->
                       ${activeProjectSignal.value 
                         ? this.renderSelect() 
                         : html`<p class="text-xs text-zinc-400 italic bg-zinc-900/30 p-3 border border-zinc-850 rounded">⚠️ Please select or configure an Active Project Workspace first to enable subfolder scoping and task execution.</p>`
@@ -923,8 +921,8 @@ const getVal = (name: string): string => {
                             name="provider" 
                             class="w-full px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm cursor-pointer"
                           >
-                            <option value="deepseek">Deepseek V4 flash (Default) </option>
-                            <option value="gemini">Google Gemini </option>
+                            <option value="deepseek">Deepseek V4 flash (Default)</option>
+                            <option value="gemini">Google Gemini</option>
                             <option value="openai">OpenAI (GPT-5.4-mini)</option>
                           </select>
                         </div>

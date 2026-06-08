@@ -1,6 +1,7 @@
 import { signal } from "@preact/signals-core";
 import { Effect } from "effect";
 import { clientLog } from "../clientLog";
+import { McpClientService } from "../McpClientService.ts";
 
 export interface PlanTask {
   readonly id: string;
@@ -45,7 +46,7 @@ const getStoredPaused = (): boolean => {
   return localStorage.getItem("grug-active-paused") === "true";
 };
 
-// Client-side Signals (Hydrated from persistent LocalStorage cache)
+// Client-side Signals
 export const tasksSignal = signal<readonly PlanTask[]>(getStoredTasks());
 export const isPausedSignal = signal<boolean>(getStoredPaused());
 export const activeTxSignal = signal<GitTransaction | null>(getStoredTx());
@@ -94,17 +95,6 @@ export const setGrugToken = (token: string) => {
   }
 };
 
-const getHeaders = () => {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  const token = grugTokenState.value;
-  if (token) {
-    headers["X-Grug-Token"] = token;
-  }
-  return headers;
-};
-
 export const taskStore = {
   clear: () =>
     Effect.gen(function* () {
@@ -133,35 +123,21 @@ export const taskStore = {
       errorSignal.value = null;
       yield* clientLog("info", "[taskStore] Reconciling active transaction state with server...");
 
-      const url = cwd ? `/api/workspace/status?cwd=${encodeURIComponent(cwd)}` : "/api/workspace/status";
+      const mcp = yield* McpClientService;
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch(url, {
-            method: "GET",
-            headers: getHeaders(),
-          }),
-        catch: (e) => new Error(`Failed to query transaction status: ${String(e)}`),
-      }).pipe(Effect.either);
+      const response = yield* mcp.callTool("git_get_status", { cwd }).pipe(Effect.either);
 
       if (response._tag === "Left") {
-        yield* clientLog("warn", `[taskStore] Server unreachable during reconciliation: ${response.left.message}. Using cached localStorage.`);
+        yield* clientLog("warn", `[taskStore] Reconcile tool call failed: ${response.left.message}. Using cached localStorage.`);
         return;
       }
 
       const res = response.right;
-      if (!res.ok) {
-        yield* clientLog("error", `[taskStore] Status request failed: HTTP ${res.status}`);
-        return;
-      }
-
-      const state = yield* Effect.tryPromise({
-        try: () => res.json() as Promise<{ tx: GitTransaction; tasks: readonly PlanTask[] } | null>,
-        catch: (e) => new Error(`Failed to parse transaction status payload: ${String(e)}`),
-      });
+      const text = res.content?.[0]?.text;
+      const state = text ? JSON.parse(text) : null;
 
       if (state && typeof state === "object" && "tx" in state && state.tx) {
-        yield* clientLog("info", `[taskStore] Active transaction reconciled successfully with server: id=${state.tx.id}`);
+        yield* clientLog("info", `[taskStore] Active transaction reconciled successfully via MCP: id=${state.tx.id}`);
         activeTxSignal.value = state.tx;
         tasksSignal.value = state.tasks || [];
 
@@ -170,9 +146,9 @@ export const taskStore = {
           localStorage.setItem("grug-active-tasks", JSON.stringify(state.tasks || []));
         }
 
-        const hasPending = (state.tasks || []).some((t) => t.status === "pending");
+        const hasPending = (state.tasks || []).some((t: any) => t.status === "pending");
         if (!isPausedSignal.value && hasPending) {
-          yield* clientLog("info", "[taskStore] Active pending tasks found during reconciliation. Resuming autopilot runner...");
+          yield* clientLog("info", "[taskStore] Active pending tasks found. Resuming autopilot runner...");
           yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
         }
       } else {
@@ -193,58 +169,35 @@ export const taskStore = {
       errorSignal.value = null;
       isResearchingSignal.value = true;
       
-      yield* clientLog("info", `[taskStore] Researching codebase in mode: ${mode} for feature: ${description}`);
+      yield* clientLog("info", `[taskStore] Researching codebase via MCP in mode: ${mode} for feature: ${description}`);
 
       const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
+      const mcp = yield* McpClientService;
 
-      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/research with userPrompt:", description);
-
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/workspace/research", {
-            method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({
-              userPrompt: description,
-              cwd: requestCwd,
-              provider,
-              mode,
-              history,
-            }),
-          }),
-        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-      });
-
-      console.info("[taskStore DEBUG] Received response from /api/workspace/research with status:", response.status);
-
-      yield* clientLog("info", "[taskStore] POST /api/workspace/research fetch response completed", response.status);
+      const responseResult = yield* mcp.callTool("grug_skeletal_research", {
+        userPrompt: description,
+        cwd: requestCwd,
+        provider,
+        mode,
+        history,
+      }).pipe(Effect.either);
 
       isResearchingSignal.value = false;
 
-      if (!response.ok) {
-        const errObj = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<{ error: string }>,
-          catch: () => ({ error: `HTTP error ${response.status}` }),
-        });
-        errorSignal.value = errObj.error;
-        yield* clientLog("error", "[taskStore] POST /api/workspace/research response was not OK", errObj.error);
-        return yield* Effect.fail(new Error(errObj.error));
+      if (responseResult._tag === "Left") {
+        errorSignal.value = responseResult.left.message;
+        yield* clientLog("error", "[taskStore] MCP grug_skeletal_research call failed", responseResult.left);
+        return yield* Effect.fail(responseResult.left);
       }
 
-      yield* clientLog("info", "[taskStore] Parsing response JSON payload...");
+      const res = responseResult.right;
+      const text = res.content?.[0]?.text;
+      if (!text) {
+        errorSignal.value = "Empty response from skeletal research tool";
+        return yield* Effect.fail(new Error("Empty response from skeletal research tool"));
+      }
 
-      const researchResult = yield* Effect.tryPromise({ 
-        try: () => response.json() as Promise<{
-          status: "discussion" | "resolved";
-          discussionText?: string;
-          suggestedOptions?: readonly string[];
-          target_files?: readonly string[];
-          plan?: readonly PlanTask[];
-        }>,
-        catch: (e) => new Error(`Failed to parse research data: ${String(e)}`),
-      });
-
-      yield* clientLog("info", "[taskStore] Parse successfully completed, updating signals...");
+      const researchResult = JSON.parse(text);
 
       if (researchResult.status === "discussion") {
         discussionTextSignal.value = researchResult.discussionText || "";
@@ -276,9 +229,10 @@ export const taskStore = {
   ) =>
     Effect.gen(function* () { 
       errorSignal.value = null;
-      yield* clientLog("info", `[taskStore] Initializing task queue for transaction: ${taskId}`);
+      yield* clientLog("info", `[taskStore] Initializing task queue via MCP for transaction: ${taskId}`);
 
       const requestCwd = selectedScope ? (cwd ? `${cwd}/${selectedScope}` : selectedScope) : cwd;
+      const mcp = yield* McpClientService;
 
       let initialTasks: readonly PlanTask[];
       if (customTasks && customTasks.length > 0) {
@@ -306,33 +260,26 @@ export const taskStore = {
         ];
       }
 
-      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/init with taskId:", taskId);
+      const responseResult = yield* mcp.callTool("git_init_tx", {
+        taskId,
+        cwd: requestCwd,
+        provider,
+        tasks: initialTasks,
+      }).pipe(Effect.either);
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/workspace/init", {
-            method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({ taskId, cwd: requestCwd, provider, tasks: initialTasks }),
-          }),
-        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-      });
-
-      console.info("[taskStore DEBUG] Received response from /api/workspace/init with status:", response.status);
-
-      if (!response.ok) {
-        const errObj = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<{ error: string }>,
-          catch: () => ({ error: `HTTP error ${response.status}` }),
-        });
-        errorSignal.value = errObj.error;
-        return yield* Effect.fail(new Error(errObj.error));
+      if (responseResult._tag === "Left") {
+        errorSignal.value = responseResult.left.message;
+        return yield* Effect.fail(responseResult.left);
       }
 
-      const tx = yield* Effect.tryPromise({
-        try: () => response.json() as Promise<GitTransaction>,
-        catch: (e) => new Error(`Failed to parse transaction data: ${String(e)}`),
-      });
+      const res = responseResult.right;
+      const text = res.content?.[0]?.text;
+      if (!text) {
+        errorSignal.value = "Failed to parse initial transaction data";
+        return yield* Effect.fail(new Error("Failed to parse initial transaction data"));
+      }
+
+      const tx = JSON.parse(text) as GitTransaction;
 
       tasksSignal.value = initialTasks;
       activeTxSignal.value = tx;
@@ -345,8 +292,6 @@ export const taskStore = {
         localStorage.setItem("grug-active-tasks", JSON.stringify(initialTasks));
         localStorage.setItem("grug-active-paused", isPausedSignal.value ? "true" : "false");
       }
-
-      
 
       yield* clientLog("info", `[taskStore] Task queue initialized. Ephemeral branch: ${tx.ephemeralBranch}`);
       
@@ -376,101 +321,40 @@ export const taskStore = {
         localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
       }
 
-      yield* clientLog("info", `[taskStore] Executing step: ${task.description}`);
+      yield* clientLog("info", `[taskStore] Executing step via MCP: ${task.description}`);
 
-      let polling = true;
-      const pollProgress = async () => {
-        while (polling) {
-          try {
-            const res = await fetch("/api/workspace/progress", { headers: getHeaders() });
-            if (res.ok) {
-              const data = await res.json() as { progress: string };
-              if (data.progress) {
-                stepProgressSignal.value = data.progress;
-              }
-            }
-          } catch {
-            // Ignore temporary polling network drops
-          }
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      };
-      if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
-        void pollProgress();
-      }
-
-      console.info("[taskStore DEBUG] Sending fetch to /api/workspace/execute-step for task:", task.id);
+      const mcp = yield* McpClientService;
 
       const runFetch = Effect.gen(function* () { 
-        const responseResult = yield* Effect.tryPromise({
-          try: () =>
-            fetch("/api/workspace/execute-step", {
-              method: "POST",
-              headers: getHeaders(),
-              body: JSON.stringify({
-                tx,
-                targetFiles: task.targetFiles,
-                instructions: task.developerNotes || task.description,
-                cwd,
-                currentTaskId: task.id,
-                tasks: tasksSignal.value
-              }),
-            }),
-          catch: (e) => {
-            console.error("[taskStore DEBUG] Fetch call threw critical error:", e);
-            return new Error(`Failed to contact server: ${String(e)}`);
-          },
+        const responseResult = yield* mcp.callTool("execute_step", {
+          tx,
+          targetFiles: task.targetFiles,
+          instructions: task.developerNotes || task.description,
+          cwd,
+          currentTaskId: task.id,
+          tasks: tasksSignal.value,
         }).pipe(Effect.either);
 
         if (responseResult._tag === "Left") {
           errorSignal.value = responseResult.left.message;
-          yield* clientLog("error", "[taskStore] execute-step Fetch request rejected structurally", responseResult.left);
+          yield* clientLog("error", "[taskStore] execute_step MCP call failed", responseResult.left);
           tasksSignal.value = tasksSignal.value.map((t) =>
             t.id === task.id ? { ...t, status: "failed" } : t
           );
           return yield* Effect.fail(responseResult.left);
         }
 
-        const response = responseResult.right;
-        console.info("[taskStore DEBUG] Received response from /api/workspace/execute-step with status:", response.status);
-
-        if (!response.ok) {
-          const errObj = yield* Effect.tryPromise({ 
-            try: () => response.json() as Promise<{ error: string }>,
-            catch: (e) => {
-              console.error("[taskStore DEBUG] Failed to parse failed-status response payload:", e);
-              return { error: `HTTP error ${response.status}` };
-            },
-          });
-          errorSignal.value = errObj.error;
+        const res = responseResult.right;
+        const text = res.content?.[0]?.text;
+        if (!text) {
+          errorSignal.value = "Failed to parse updated transaction data";
           tasksSignal.value = tasksSignal.value.map((t) =>
             t.id === task.id ? { ...t, status: "failed" } : t
           );
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("grug-active-tasks", JSON.stringify(tasksSignal.value));
-          }
-          yield* clientLog("error", `[taskStore] execute-step returned error payload: ${errObj.error}`);
-          return yield* Effect.fail(new Error(errObj.error));
+          return yield* Effect.fail(new Error("Failed to parse updated transaction data"));
         }
 
-        const updatedTxResult = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<GitTransaction>,
-          catch: (e) => {
-            console.error("[taskStore DEBUG] JSON parsing of updated transaction failed:", e);
-            return new Error(`Failed to parse transaction data: ${String(e)}`);
-          },
-        }).pipe(Effect.either);
-
-        if (updatedTxResult._tag === "Left") {
-          errorSignal.value = updatedTxResult.left.message;
-          yield* clientLog("error", "[taskStore] execute-step success response was unparseable", updatedTxResult.left);
-          tasksSignal.value = tasksSignal.value.map((t) =>
-            t.id === task.id ? { ...t, status: "failed" } : t
-          );
-          return yield* Effect.fail(updatedTxResult.left);
-        }
-
-        const updatedTx = updatedTxResult.right;
+        const updatedTx = JSON.parse(text) as GitTransaction;
         activeTxSignal.value = updatedTx;
         tasksSignal.value = tasksSignal.value.map((t) =>
           t.id === task.id ? { ...t, status: "completed" } : t
@@ -487,7 +371,6 @@ export const taskStore = {
       yield* Effect.ensuring(
         runFetch,
         Effect.sync(() => {
-          polling = false;
           stepProgressSignal.value = "";
         })
       );
@@ -560,32 +443,25 @@ export const taskStore = {
         return yield* Effect.fail(new Error("No active transaction found for rollback."));
       }
 
-      yield* clientLog("warn", `[taskStore] Initiating rollback to checkpoint hash: ${commitHash}`);
+      yield* clientLog("warn", `[taskStore] Initiating rollback via MCP to checkpoint hash: ${commitHash}`);
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/workspace/rollback", {
-            method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({ tx, commitHash, cwd }),
-          }),
-        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-      });
+      const mcp = yield* McpClientService;
 
-      if (!response.ok) {
-        const errObj = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<{ error: string }>,
-          catch: () => ({ error: `HTTP error ${response.status}` }),
-        });
-        errorSignal.value = errObj.error;
-        return yield* Effect.fail(new Error(errObj.error));
+      const responseResult = yield* mcp.callTool("git_rollback", { tx, commitHash, cwd }).pipe(Effect.either);
+
+      if (responseResult._tag === "Left") {
+        errorSignal.value = responseResult.left.message;
+        return yield* Effect.fail(responseResult.left);
       }
 
-      const updatedTx = yield* Effect.tryPromise({
-        try: () => response.json() as Promise<GitTransaction>,
-        catch: (e) => new Error(`Failed to parse rollback transaction data: ${String(e)}`),
-      });
+      const res = responseResult.right;
+      const text = res.content?.[0]?.text;
+      if (!text) {
+        errorSignal.value = "Failed to parse rollback transaction data";
+        return yield* Effect.fail(new Error("Failed to parse rollback transaction data"));
+      }
 
+      const updatedTx = JSON.parse(text) as GitTransaction;
       activeTxSignal.value = updatedTx;
       
       tasksSignal.value = tasksSignal.value.map((task) =>
@@ -607,25 +483,15 @@ export const taskStore = {
       const tx = activeTxSignal.value;
       if (!tx) return;
 
-      yield* clientLog("warn", `[taskStore] Aborting active transaction: ${tx.id}`);
+      yield* clientLog("warn", `[taskStore] Aborting active transaction via MCP: ${tx.id}`);
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/workspace/abort", {
-            method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({ tx, cwd }),
-          }),
-        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-      });
+      const mcp = yield* McpClientService;
 
-      if (!response.ok) {
-        const errObj = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<{ error: string }>,
-          catch: () => ({ error: `HTTP error ${response.status}` }),
-        });
-        errorSignal.value = errObj.error;
-        return yield* Effect.fail(new Error(errObj.error));
+      const responseResult = yield* mcp.callTool("git_abort", { tx, cwd }).pipe(Effect.either);
+
+      if (responseResult._tag === "Left") {
+        errorSignal.value = responseResult.left.message;
+        return yield* Effect.fail(responseResult.left);
       }
 
       tasksSignal.value = [];
@@ -647,25 +513,15 @@ export const taskStore = {
       const tx = activeTxSignal.value;
       if (!tx) return;
 
-      yield* clientLog("info", `[taskStore] Committing transaction: ${tx.id}`);
+      yield* clientLog("info", `[taskStore] Committing transaction via MCP: ${tx.id}`);
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/workspace/commit", {
-            method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({ tx, cwd }),
-          }),
-        catch: (e) => new Error(`Failed to contact server: ${String(e)}`),
-      });
+      const mcp = yield* McpClientService;
 
-      if (!response.ok) {
-        const errObj = yield* Effect.tryPromise({
-          try: () => response.json() as Promise<{ error: string }>,
-          catch: () => ({ error: `HTTP error ${response.status}` }),
-        });
-        errorSignal.value = errObj.error;
-        return yield* Effect.fail(new Error(errObj.error));
+      const responseResult = yield* mcp.callTool("git_commit", { tx, cwd }).pipe(Effect.either);
+
+      if (responseResult._tag === "Left") {
+        errorSignal.value = responseResult.left.message;
+        return yield* Effect.fail(responseResult.left);
       }
 
       tasksSignal.value = [];

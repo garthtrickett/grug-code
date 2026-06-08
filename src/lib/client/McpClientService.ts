@@ -35,8 +35,8 @@ export const McpClientLive = Layer.effect(
       return new URL("/api/mcp/sse", window.location.origin);
     };
 
-    const connect = ()
-      => Effect.gen(function* () {
+        const connect = () =>
+      Effect.gen(function* () {
         if (isConnected) return;
         yield* clientLog("info", "[McpClientService] Connecting to sidecar daemon over SSE...");
         
@@ -54,8 +54,8 @@ export const McpClientLive = Layer.effect(
         yield* clientLog("info", "[McpClientService] MCP Client connected and initialized.");
       });
 
-    const callTool = (name: string, args: Record<string, unknown>)
-      => Effect.gen(function* () {
+        const callTool = (name: string, args: Record<string, unknown>) =>
+      Effect.gen(function* () {
         yield* connect();
 
         yield* clientLog("debug", `[McpClientService] Calling tool: ${name}`, args);
@@ -67,8 +67,9 @@ export const McpClientLive = Layer.effect(
 
         yield* clientLog("debug", `[McpClientService] Tool '${name}' returned response:`, response);
 
-        if (response.isError) {
-          const errMsg = response.content?.[0]?.type === "text" ? response.content[0].text : "Unknown tool execution error";
+                const res = response as any;
+        if (res.isError) {
+          const errMsg = res.content?.[0]?.type === "text" ? res.content[0].text : "Unknown tool execution error";
           return yield* Effect.fail(new Error(errMsg));
         }
 
