@@ -1,6 +1,6 @@
-const { mockSpawn, state } = vi.hoisted(() => ({
+const { mockSpawn, mockState } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
-  state: { useMockSpawn: false }
+  mockState: { useMock: false }
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -8,7 +8,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return {
     ...actual,
     spawn: (command: string, args: any, options: any) => {
-      if (state.useMockSpawn) {
+      if (mockState.useMock) {
         return mockSpawn(command, args, options);
       }
       return actual.spawn(command, args, options);
@@ -358,9 +358,9 @@ Grug applied patch success.
     }
   });
 
-        describe("Tier-Based Verification Routing", () => {
+            describe("Tier-Based Verification Routing", () => {
     beforeEach(() => {
-      state.useMockSpawn = true;
+      mockState.useMock = true;
       mockSpawn.mockImplementation((command: string, args: any, options: any) => {
         const mockChild = new EventEmitter();
         (mockChild as any).stdout = new EventEmitter();
@@ -373,7 +373,7 @@ Grug applied patch success.
     });
 
     afterEach(() => {
-      state.useMockSpawn = false;
+      mockState.useMock = false;
       mockSpawn.mockReset();
     });
 
