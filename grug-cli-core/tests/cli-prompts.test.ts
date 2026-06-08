@@ -29,11 +29,19 @@ vi.mock("@clack/prompts", () => {
 });
 
 describe("Interactive CLI Prompts Test Suite", () => {
+  const originalFetch = global.fetch;
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("should orchestrate prompt menu, display proposed checklist, and handle approval cleanly", async () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("should fall back to local execution cleanly if daemon is offline", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("Daemon unreachable"));
+
     const mockMapper = Layer.succeed(
       ProjectStructureMapper,
       ProjectStructureMapper.of({
@@ -82,6 +90,134 @@ describe("Interactive CLI Prompts Test Suite", () => {
 
     expect(p.intro).toHaveBeenCalled();
     expect(p.text).toHaveBeenCalled();
+    expect(p.multiselect).toHaveBeenCalled();
+    expect(p.confirm).toHaveBeenCalled();
+    expect(p.outro).toHaveBeenCalledWith("🎉 Grug Code pre-planning approved successfully!");
+  });
+
+  it("should query the online daemon and run plan checks over network successfully", async () => {
+    const mockMapperResult = {
+      jsonrpc: "2.0",
+      id: 2,
+      result: {
+        content: [{ type: "text", text: "[\"src/main.ts\"]" }]
+      }
+    };
+
+    const mockResearchResult = {
+      jsonrpc: "2.0",
+      id: 2,
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            status: "resolved",
+            target_files: ["src/main.ts"],
+            plan: [{
+              id: "step-1",
+              description: "Mock main.ts step",
+              targetFiles: ["src/main.ts"],
+              status: "pending"
+            }]
+          })
+        }]
+      }
+    };
+
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/health")) {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      if (url.includes("/api/mcp/sse")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: () => Promise.resolve({
+                value: new TextEncoder().encode("event: endpoint\ndata: /api/mcp/messages?sessionId=mock-id-123\n\n"),
+                done: false
+              }),
+              cancel: () => Promise.resolve()
+            })
+          }
+        });
+      }
+      if (url.includes("/api/mcp/messages")) {
+        if (url.includes("sessionId=mock-id-123")) {
+          const options = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1]?.[1] as any;
+          if (options && options.body) {
+            const bodyObj = JSON.parse(options.body);
+            if (bodyObj.method === "initialize") {
+              return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => ({ jsonrpc: "2.0", result: { protocolVersion: "2024-11-05" } })
+              });
+            }
+            if (bodyObj.method === "tools/call") {
+              if (bodyObj.params.name === "grug_map_project") {
+                return Promise.resolve({
+                  ok: true,
+                  status: 200,
+                  json: async () => mockMapperResult
+                });
+              }
+              if (bodyObj.params.name === "grug_skeletal_research") {
+                return Promise.resolve({
+                  ok: true,
+                  status: 200,
+                  json: async () => mockResearchResult
+                });
+              }
+            }
+          }
+        }
+      }
+      return Promise.resolve({ ok: false, status: 400 });
+    });
+
+    global.fetch = fetchSpy as any;
+
+    const mockMapper = Layer.succeed(
+      ProjectStructureMapper,
+      ProjectStructureMapper.of({
+        mapProject: vi.fn(),
+      })
+    );
+
+    const mockLoop = Layer.succeed(
+      ResearchLoop,
+      ResearchLoop.of({
+        run: vi.fn(),
+      })
+    );
+
+    const mockAi = Layer.succeed(
+      AiService,
+      AiService.of({
+        generateStructuredObject: vi.fn(),
+        streamText: vi.fn(),
+      })
+    );
+
+    const testRuntime = SurgicalRouterLive.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(
+          mockMapper,
+          mockLoop,
+          mockAi,
+          TreeSitterParserLive,
+          TokenEstimatorLive
+        )
+      )
+    );
+
+    const program = runCli().pipe(Effect.provide(testRuntime));
+    await Effect.runPromise(program);
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(p.intro).toHaveBeenCalled();
     expect(p.multiselect).toHaveBeenCalled();
     expect(p.confirm).toHaveBeenCalled();
     expect(p.outro).toHaveBeenCalledWith("🎉 Grug Code pre-planning approved successfully!");

@@ -47,28 +47,135 @@ export const runCli = () =>
       promptArg = promptInput as string;
     }
 
+        const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : 3010;
+    let isDaemonOnline = false;
+
+    try {
+      const healthCheck = await fetch(`http://localhost:${port}/api/health`);
+      if (healthCheck.ok) {
+        isDaemonOnline = true;
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    const callDaemonTool = (toolName: string, args: Record<string, any>) =>
+      Effect.promise(async () => {
+        const sseResponse = await fetch(`http://localhost:${port}/api/mcp/sse`);
+        if (!sseResponse.ok) throw new Error("SSE connection failed");
+
+        const reader = sseResponse.body?.getReader();
+        if (!reader) throw new Error("Failed to get reader");
+
+        const { value } = await reader.read();
+        const rawText = new TextDecoder().decode(value);
+        const sessionIdMatch = /sessionId=([a-zA-Z0-9\\-]+)/.exec(rawText);
+        const sessionId = sessionIdMatch?.[1];
+        if (!sessionId) {
+          await reader.cancel();
+          throw new Error("Missing sessionId");
+        }
+
+        const initRequest = {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "grug-cli-client", version: "0.1.0" }
+          }
+        };
+        await fetch(`http://localhost:${port}/api/mcp/messages?sessionId=${sessionId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(initRequest)
+        });
+
+        const callRequest = {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            name: toolName,
+            arguments: args
+          }
+        };
+        const callRes = await fetch(`http://localhost:${port}/api/mcp/messages?sessionId=${sessionId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(callRequest)
+        });
+        const callResult = await callRes.json() as any;
+        await reader.cancel();
+
+        if (callResult.error) {
+          throw new Error(callResult.error.message || "Tool execution failed");
+        }
+        return callResult.result;
+      });
+
     const s = p.spinner();
     s.start("Grug scanning workspace directories...");
 
-    const mapper = yield* ProjectStructureMapper;
-    const projectStructure = yield* mapper.mapProject({});
+    let projectStructure = "";
+    if (isDaemonOnline) {
+      s.message("Grug scanning workspace directories (via Daemon)...");
+      try {
+        const callResult = yield* callDaemonTool("grug_map_project", {});
+        projectStructure = callResult.content[0].text;
+      } catch (err) {
+        s.stop();
+        p.note(`Failed to scan directories via daemon: ${String(err)}. Falling back to local execution.`, "⚠️ Warning");
+        isDaemonOnline = false;
+        s.start("Grug scanning workspace directories...");
+      }
+    }
+
+    if (!isDaemonOnline) {
+      const mapper = yield* ProjectStructureMapper;
+      projectStructure = yield* mapper.mapProject({});
+    }
 
     s.message("Grug pre-planning implementation loop...");
 
-    const loop = yield* ResearchLoop;
     let turnHistory: Array<{ role: "user" | "assistant"; text: string }> = [];
     let currentPrompt = promptArg;
     let resolved = false;
 
     while (!resolved) {
       const mode = turnHistory.length > 0 ? "discussion" : "standard";
-      const result = yield* loop.run({
-        userPrompt: currentPrompt,
-        projectStructure,
-        provider: "openai",
-        mode,
-        history: turnHistory,
-      });
+      let result: any;
+
+      if (isDaemonOnline) {
+        s.message("Grug pre-planning implementation loop (via Daemon)...");
+        try {
+          const callResult = yield* callDaemonTool("grug_skeletal_research", {
+            userPrompt: currentPrompt,
+            projectStructure,
+            provider: "openai",
+            mode,
+            history: turnHistory,
+          });
+          result = JSON.parse(callResult.content[0].text);
+        } catch (err) {
+          s.stop();
+          p.note(`Failed to execute planning via daemon: ${String(err)}. Falling back to local execution.`, "⚠️ Warning");
+          isDaemonOnline = false;
+          s.start("Grug pre-planning implementation loop...");
+        }
+      }
+
+      if (!isDaemonOnline) {
+        const loop = yield* ResearchLoop;
+        result = yield* loop.run({
+          userPrompt: currentPrompt,
+          projectStructure,
+          provider: "openai",
+          mode,
+          history: turnHistory,
+        });
+      }
 
       s.stop("Grug done pre-planning.");
 
