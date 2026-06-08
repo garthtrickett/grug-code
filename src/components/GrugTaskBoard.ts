@@ -306,10 +306,11 @@ export class GrugTaskBoard extends LitElement {
             this._selectService = service;
       service.start();
 
-      let lastState = service.state.value;
-      service.subscribe((state) => {
-        if (state.value !== lastState) {
-          lastState = state.value;
+            let lastState = service.state.get();
+      service.subscribe(() => {
+        const currentState = service.state.get();
+        if (currentState !== lastState) {
+          lastState = currentState;
           this.requestUpdate();
         }
       });
@@ -421,10 +422,11 @@ export class GrugTaskBoard extends LitElement {
             this._projectSelectService = service;
       service.start();
 
-      let lastState = service.state.value;
-      service.subscribe((state) => {
-        if (state.value !== lastState) {
-          lastState = state.value;
+            let lastState = service.state.get();
+      service.subscribe(() => {
+        const currentState = service.state.get();
+        if (currentState !== lastState) {
+          lastState = currentState;
           this.requestUpdate();
         }
       });
