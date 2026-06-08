@@ -212,14 +212,15 @@ export const taskStore = {
         return yield* Effect.fail(responseResult.left);
       }
 
-      const res = responseResult.right;
-      const text = res.content?.[0]?.text;
+            const res = responseResult.right;
+      const firstContent = res.content[0];
+      const text = firstContent?.text;
       if (!text) {
         errorSignal.value = "Empty response from skeletal research tool";
         return yield* Effect.fail(new Error("Empty response from skeletal research tool"));
       }
 
-      const researchResult = JSON.parse(text);
+      const researchResult = (JSON.parse(text) as unknown) as ResearchResult;
 
       if (researchResult.status === "discussion") {
         discussionTextSignal.value = researchResult.discussionText || "";
