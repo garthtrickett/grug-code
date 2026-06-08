@@ -346,8 +346,7 @@ export const taskStore = {
         localStorage.setItem("grug-active-paused", isPausedSignal.value ? "true" : "false");
       }
 
-      const { hlcStore } = yield* Effect.promise(() => import("./hlcStore"));
-      yield* hlcStore.tick();
+      
 
       yield* clientLog("info", `[taskStore] Task queue initialized. Ephemeral branch: ${tx.ephemeralBranch}`);
       

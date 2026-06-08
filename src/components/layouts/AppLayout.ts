@@ -2,7 +2,7 @@ import { LitElement, html, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { effect } from "@preact/signals-core";
 import { localeState, t } from "../../lib/client/stores/i18nStore";
-import { isUpdateAvailableState, applyAppUpdate } from "../../lib/client/stores/pwaStore.ts";
+
 
 @customElement("app-layout")
 export class AppLayout extends LitElement {
@@ -14,11 +14,10 @@ export class AppLayout extends LitElement {
 
   private _disposeEffect?: () => void;
 
-  override connectedCallback() {
+    override connectedCallback() {
     super.connectedCallback();
     this._disposeEffect = effect(() => {
       void localeState.value;
-      void isUpdateAvailableState.value;
       this.requestUpdate();
     });
   }
@@ -52,24 +51,7 @@ export class AppLayout extends LitElement {
           </div>
         </div>
 
-        <!-- Controlled Update Prompt Toast -->
-        ${isUpdateAvailableState.value
-          ? html`
-              <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-950/95 p-4 shadow-xl backdrop-blur-sm animate-fade-in max-w-md w-full mx-4">
-                <span class="text-2xl">⚡</span>
-                <div class="flex-1 min-w-0">
-                  <h4 class="text-sm font-semibold text-white">Update Available</h4>
-                  <p class="text-xs text-zinc-400 mt-0.5">A new version is ready. Click below to upgrade.</p>
-                </div>
-                <button
-                  @click=${() => { void applyAppUpdate(); }}
-                  class="shrink-0 px-3.5 py-1.5 bg-green-650 hover:bg-green-600 active:bg-green-700 text-white font-bold rounded text-xs transition-colors cursor-pointer"
-                >
-                  Reload
-                </button>
-              </div>
-            `
-          : ""}
+        
       </div>
     `;
   }
