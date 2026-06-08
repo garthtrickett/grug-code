@@ -159,11 +159,14 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
       await transport.handlePostMessage(mockReq, mockRes, body);
       console.info(`[mcpRoutes /messages] handlePostMessage finished. Status: ${statusCode}`);
       
-      // Wait for up to 150ms to capture any asynchronous response generated via transport.send
+      // Dynamically scale timeout depending on whether it is a JSON-RPC request (has "id") or notification
+      const hasId = body && typeof body === "object" && "id" in body;
+      const timeoutDuration = hasId ? 120000 : 50;
+
       if (!lastSentMessage) {
         await Promise.race([
           messagePromise,
-          new Promise((resolve) => setTimeout(resolve, 150))
+          new Promise((resolve) => setTimeout(resolve, timeoutDuration))
         ]);
       }
     } catch (err) {
