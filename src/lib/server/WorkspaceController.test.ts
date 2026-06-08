@@ -9,8 +9,9 @@ import { makeWorkspaceController } from "./WorkspaceController";
 import { db } from "../../db/client";
 import type { ProjectId } from "../../types";
 
-const { mockSpawn } = vi.hoisted(() => ({
+const { mockSpawn, state } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
+  state: { useMockSpawn: false }
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -18,7 +19,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return {
     ...actual,
     spawn: (command: string, args: any, options: any) => {
-      if (mockSpawn.getMockImplementation()) {
+      if (state.useMockSpawn) {
         return mockSpawn(command, args, options);
       }
       return actual.spawn(command, args, options);
@@ -357,8 +358,9 @@ Grug applied patch success.
     }
   });
 
-    describe("Tier-Based Verification Routing", () => {
+        describe("Tier-Based Verification Routing", () => {
     beforeEach(() => {
+      state.useMockSpawn = true;
       mockSpawn.mockImplementation((command: string, args: any, options: any) => {
         const mockChild = new EventEmitter();
         (mockChild as any).stdout = new EventEmitter();
@@ -371,6 +373,7 @@ Grug applied patch success.
     });
 
     afterEach(() => {
+      state.useMockSpawn = false;
       mockSpawn.mockReset();
     });
 
@@ -411,11 +414,13 @@ Grug applied patch success.
       await Effect.runPromise(controller.abortTransaction(tx));
     });
 
-    it("should route to Tier 2 (Nix/Docker Sandbox) when uses_devcontainer is false, flake.nix exists, and docker is running", async () => {
+        it("should route to Tier 2 (Nix/Docker Sandbox) when uses_devcontainer is false, flake.nix exists, and docker is running", async () => {
       const projectId = crypto.randomUUID() as ProjectId;
       const absoluteTempDir = path.resolve(tempDir);
 
       await fs.writeFile(path.join(tempDir, "flake.nix"), "{}");
+      await execPromise("git add flake.nix", { cwd: tempDir });
+      await execPromise("git commit -m 'add flake.nix'", { cwd: tempDir });
 
       await db.insertInto("project")
         .values({
