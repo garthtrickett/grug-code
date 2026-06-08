@@ -149,7 +149,7 @@ const parseCommandString = (cmdStr: string): string[] => {
 
 const isDockerRunning = async (): Promise<boolean> => {
   try {
-    const { execSync } = require("node:child_process");
+    await Promise.resolve();
     execSync("docker info", { stdio: "ignore" });
     return true;
   } catch {
