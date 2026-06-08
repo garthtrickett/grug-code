@@ -156,7 +156,11 @@ class ElysiaMockResponse extends ServerResponse {
 }
 
 export const createDaemonApp = () => {
-  return new Elysia()
+  return new Elysia({
+    serve: {
+      reusePort: false
+    }
+  })
     .use(cors())
     .get("/api/health", () => ({ status: "ok", service: "grug-cli-daemon" }))
     .get("/api/preferences", () => ({ dailyReviewLimit: 20, dailyNewRuleLimit: 3, enforceMasteryGates: true }))

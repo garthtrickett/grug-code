@@ -1,4 +1,3 @@
-// File: src/lib/client/McpClientService.ts
 import { Context, Effect, Layer } from "effect";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -38,7 +37,7 @@ export const McpClientLive = Layer.effect(
 
     let connectionPromise: Promise<void> | null = null;
 
-        const getSseUrl = (): URL => {
+    const getSseUrl = (): URL => {
       // Revert to window.location.origin during development to route through Vite same-origin proxy (port 3000)
       // This completely bypasses Mixed Content security blocks in browser rendering engines.
       if (typeof window !== "undefined") {
@@ -68,6 +67,7 @@ export const McpClientLive = Layer.effect(
         yield* clientLog("debug", `[McpClientService] Connection URL: ${sseUrl.toString()}`);
 
         connectionPromise = new Promise<void>((resolve, reject) => {
+          client.close().catch(() => {});
           const transport = new SSEClientTransport(sseUrl);
           client.connect(transport)
             .then(() => resolve())
@@ -79,7 +79,10 @@ export const McpClientLive = Layer.effect(
 
         yield* Effect.tryPromise({
           try: () => connectionPromise!,
-          catch: (e) => new Error(`MCP Client SSE connection failed: ${String(e)}`),
+          catch: (e) => {
+            connectionPromise = null;
+            return new Error(`MCP Client SSE connection failed: ${String(e)}`);
+          },
         });
 
         yield* clientLog("info", "[McpClientService] MCP Client connected and initialized.");
@@ -91,11 +94,18 @@ export const McpClientLive = Layer.effect(
 
         yield* clientLog("debug", `[McpClientService] Calling tool: ${name}`, args);
 
-        const response = yield* Effect.tryPromise({
+        const responseResult = yield* Effect.tryPromise({
           try: () => client.callTool({ name, arguments: args }),
           catch: (e) => new Error(`Tool call '${name}' failed: ${String(e)}`),
-        });
+        }).pipe(Effect.either);
 
+        if (responseResult._tag === "Left") {
+          yield* clientLog("error", `[McpClientService] Tool call '${name}' failed, clearing connection cache: ${responseResult.left.message}`);
+          connectionPromise = null;
+          return yield* Effect.fail(responseResult.left);
+        }
+
+        const response = responseResult.right;
         yield* clientLog("debug", `[McpClientService] Tool '${name}' returned response:`, response);
 
         const res = response as unknown as McpCallToolResult;

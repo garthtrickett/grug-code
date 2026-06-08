@@ -83,6 +83,7 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
     set.headers["X-Accel-Buffering"] = "no"; // Prevent connection buffering under proxy networks
 
     let activeTransport: SSEServerTransport | null = null;
+    let heartbeatInterval: any = null;
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -115,8 +116,21 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
         const { createMcpServer } = await import("../lib/server/mcp/McpServer.ts");
         const mcpServerInstance = createMcpServer();
         await mcpServerInstance.connect(transport);
+
+        // Keep-alive heartbeat comment every 15 seconds to prevent browser/proxy timeouts
+        const encoder = new TextEncoder();
+        heartbeatInterval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(":\n\n"));
+          } catch {
+            // ignore if stream closed
+          }
+        }, 15000);
       },
       cancel() {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+        }
         if (activeTransport) {
           console.error(`[McpServer] 🔴 SSE stream cancelled/closed prematurely for SessionId: "${activeTransport.sessionId}"`);
           try {
@@ -275,7 +289,8 @@ void import("../lib/server/TreeSitterParser.ts").then(({ TreeSitterParser, TreeS
 
 export const app = new Elysia({
   serve: {
-    idleTimeout: 255, 
+    idleTimeout: 255,
+    reusePort: false,
   }
 })
   .onBeforeHandle(({ request, set }) => {
