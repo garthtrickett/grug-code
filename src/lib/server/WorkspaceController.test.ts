@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as child_process from "node:child_process";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Effect } from "effect";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -274,7 +275,7 @@ Grug applied patch success.
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-failing-command"));
 
-        const result = await Effect.runPromise(controller.runTypeCheck(tx));
+    const result = await Effect.runPromise(controller.runTypeCheck(tx));
     expect(result.success).toBe(false);
     expect(result.errorOutput).toContain("typecheck-failure-details");
 
@@ -286,7 +287,7 @@ Grug applied patch success.
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-worktree-ops"));
 
-        const worktreePath = await Effect.runPromise(controller.createWorktree(tx));
+    const worktreePath = await Effect.runPromise(controller.createWorktree(tx));
     expect(worktreePath).toContain(`.cache/grug-code/worktrees/task-${tx.id}`);
 
     const exists = await fs.stat(worktreePath).then(() => true).catch(() => false);
@@ -337,5 +338,137 @@ Grug applied patch success.
     if (result._tag === "Left") {
       expect(result.left.message).toContain("Security validation failed: path traversal attempt detected");
     }
+  });
+
+  describe("Tier-Based Verification Routing", () => {
+    let spawnSpy: any;
+
+    beforeEach(() => {
+      spawnSpy = vi.spyOn(child_process, "spawn").mockImplementation(() => {
+        const mockChild = new (require("node:events").EventEmitter)();
+        (mockChild as any).stdout = new (require("node:events").EventEmitter)();
+        (mockChild as any).stderr = new (require("node:events").EventEmitter)();
+        setTimeout(() => {
+          mockChild.emit("close", 0);
+        }, 10);
+        return mockChild as any;
+      });
+    });
+
+    afterEach(() => {
+      spawnSpy.mockRestore();
+    });
+
+    it("should route to Tier 1 (Dev Container) when uses_devcontainer is true", async () => {
+      const projectId = crypto.randomUUID() as ProjectId;
+      const absoluteTempDir = path.resolve(tempDir);
+
+      await db.insertInto("project")
+        .values({
+          id: projectId,
+          name: "DevContainer Project",
+          root_path: absoluteTempDir,
+          type_check_command: "tsc --noEmit",
+          uses_devcontainer: true
+        })
+        .execute();
+
+      const controller = makeWorkspaceController(tempDir);
+      const tx = await Effect.runPromise(controller.initTransaction("task-t1"));
+
+      const result = await Effect.runPromise(controller.runTypeCheck(tx));
+      expect(result.success).toBe(true);
+
+      expect(spawnSpy).toHaveBeenCalled();
+      const firstCall = spawnSpy.mock.calls[0];
+      expect(firstCall[0]).toBe("devcontainer");
+      expect(firstCall[1]).toEqual([
+        "exec",
+        "--workspace-folder",
+        absoluteTempDir,
+        "tsc",
+        "--noEmit"
+      ]);
+
+      await db.deleteFrom("project").where("id", "=", projectId).execute();
+      await Effect.runPromise(controller.abortTransaction(tx));
+    });
+
+    it("should route to Tier 2 (Nix/Docker Sandbox) when uses_devcontainer is false, flake.nix exists, and docker is running", async () => {
+      const projectId = crypto.randomUUID() as ProjectId;
+      const absoluteTempDir = path.resolve(tempDir);
+
+      await fs.writeFile(path.join(tempDir, "flake.nix"), "{}");
+
+      await db.insertInto("project")
+        .values({
+          id: projectId,
+          name: "Nix Docker Project",
+          root_path: absoluteTempDir,
+          type_check_command: "tsc --noEmit",
+          uses_devcontainer: false
+        })
+        .execute();
+
+      const execSyncSpy = vi.spyOn(require("node:child_process"), "execSync").mockImplementation((cmd: string) => {
+        if (cmd === "docker info") return Buffer.from("Docker is running");
+        return Buffer.from("");
+      });
+
+      const controller = makeWorkspaceController(tempDir);
+      const tx = await Effect.runPromise(controller.initTransaction("task-t2"));
+
+      const result = await Effect.runPromise(controller.runTypeCheck(tx));
+      expect(result.success).toBe(true);
+
+      expect(spawnSpy).toHaveBeenCalled();
+      const firstCall = spawnSpy.mock.calls[0];
+      expect(firstCall[0]).toBe("docker");
+      expect(firstCall[1]).toEqual([
+        "run",
+        "--rm",
+        "--network", "none",
+        "-v", "/nix/store:/nix/store:ro",
+        "-v", `${absoluteTempDir}:${absoluteTempDir}`,
+        "-w", absoluteTempDir,
+        "alpine",
+        "tsc",
+        "--noEmit"
+      ]);
+
+      execSyncSpy.mockRestore();
+      await fs.unlink(path.join(tempDir, "flake.nix")).catch(() => {});
+      await db.deleteFrom("project").where("id", "=", projectId).execute();
+      await Effect.runPromise(controller.abortTransaction(tx));
+    });
+
+    it("should route to Tier 3 (Host Fallback) when no container configurations are available", async () => {
+      const projectId = crypto.randomUUID() as ProjectId;
+      const absoluteTempDir = path.resolve(tempDir);
+
+      await db.insertInto("project")
+        .values({
+          id: projectId,
+          name: "Host Project",
+          root_path: absoluteTempDir,
+          type_check_command: "tsc --noEmit",
+          uses_devcontainer: false
+        })
+        .execute();
+
+      const controller = makeWorkspaceController(tempDir);
+      const tx = await Effect.runPromise(controller.initTransaction("task-t3"));
+
+      const result = await Effect.runPromise(controller.runTypeCheck(tx));
+      expect(result.success).toBe(true);
+
+      expect(spawnSpy).toHaveBeenCalled();
+      const firstCall = spawnSpy.mock.calls[0];
+      expect(firstCall[0]).toBe("tsc");
+      expect(firstCall[1]).toEqual(["--noEmit"]);
+
+      await db.deleteFrom("project").where("id", "=", projectId).execute();
+      await Effect.runPromise(controller.abortTransaction(tx));
+    });
   });
 });

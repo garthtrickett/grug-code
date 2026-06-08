@@ -525,6 +525,43 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
+  "grug_verify_step",
+  "Executes a routed verification task (typecheck, lint, or test) inside the active transaction's workspace context.",
+  {
+    tx: z.object(gitTransactionZodShape).describe("The active Git transaction details"),
+    type: z.enum(["typecheck", "lint", "test"]).describe("The verification phase type to run"),
+    cwd: z.string().optional().describe("Working directory for the workspace repository")
+  },
+  async ({ tx, type, cwd }) => {
+    const controller = makeWorkspaceController(cwd);
+    let effect;
+    if (type === "typecheck") {
+      effect = controller.runTypeCheck(tx);
+    } else if (type === "lint") {
+      effect = controller.runLintCheck(tx);
+    } else if (type === "test") {
+      effect = controller.runTestSuite(tx);
+    } else {
+      return {
+        content: [{ type: "text", text: "Error: Invalid verification type" }],
+        isError: true,
+      };
+    }
+
+    const result = await serverRuntime.runPromise(Effect.either(effect));
+    if (result._tag === "Left") {
+      return {
+        content: [{ type: "text", text: `Error: ${result.left.message}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(result.right) }],
+    };
+  }
+);
+
+mcpServer.tool(
   "execute_step",
   "Executes a planned implementation step, applying edits and verifying them with self-correction.",
   {

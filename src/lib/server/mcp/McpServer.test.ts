@@ -77,6 +77,9 @@ const mockApplyPatch = vi.fn();
 const mockListDirectories = vi.fn();
 const mockCreateWorktree = vi.fn();
 const mockDeleteWorktree = vi.fn();
+const mockRunTypeCheck = vi.fn();
+const mockRunLintCheck = vi.fn();
+const mockRunTestSuite = vi.fn();
 
 vi.mock("../WorkspaceController.ts", () => {
   return {
@@ -90,6 +93,9 @@ vi.mock("../WorkspaceController.ts", () => {
       listDirectories: mockListDirectories,
       createWorktree: mockCreateWorktree,
       deleteWorktree: mockDeleteWorktree,
+      runTypeCheck: mockRunTypeCheck,
+      runLintCheck: mockRunLintCheck,
+      runTestSuite: mockRunTestSuite,
     }),
   };
 });
@@ -314,8 +320,50 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     });
 
     // 2. Traversal block case
-    const responseFail = await handler({ filePath: "../../../etc/passwd" });
+        const responseFail = await handler({ filePath: "../../../etc/passwd" });
     expect(responseFail.isError).toBe(true);
     expect(responseFail.content[0].text).toContain("Path traversal attempt detected");
+  });
+
+  it("should trigger runTypeCheck via grug_verify_step tool call", async () => {
+    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };
+    const mockResult = { success: true, dirtyFiles: [] };
+    mockRunTypeCheck.mockReturnValue(Effect.succeed(mockResult));
+
+    const handler = getToolHandler("grug_verify_step");
+    const response = await handler({ tx, type: "typecheck" });
+
+    expect(response).toEqual({
+      content: [{ type: "text", text: JSON.stringify(mockResult) }]
+    });
+    expect(mockRunTypeCheck).toHaveBeenCalledWith(tx);
+  });
+
+  it("should trigger runLintCheck via grug_verify_step tool call and return fail outputs on error", async () => {
+    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };
+    const mockResult = { success: false, errorOutput: "Eslint style failure", dirtyFiles: [] };
+    mockRunLintCheck.mockReturnValue(Effect.succeed(mockResult));
+
+    const handler = getToolHandler("grug_verify_step");
+    const response = await handler({ tx, type: "lint" });
+
+    expect(response).toEqual({
+      content: [{ type: "text", text: JSON.stringify(mockResult) }]
+    });
+    expect(mockRunLintCheck).toHaveBeenCalledWith(tx);
+  });
+
+  it("should trigger runTestSuite via grug_verify_step tool call and capture test logs correctly", async () => {
+    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };
+    const mockResult = { success: false, errorOutput: "Test case failed expected 1 to be 2", dirtyFiles: [] };
+    mockRunTestSuite.mockReturnValue(Effect.succeed(mockResult));
+
+    const handler = getToolHandler("grug_verify_step");
+    const response = await handler({ tx, type: "test" });
+
+    expect(response).toEqual({
+      content: [{ type: "text", text: JSON.stringify(mockResult) }]
+    });
+    expect(mockRunTestSuite).toHaveBeenCalledWith(tx);
   });
 });
