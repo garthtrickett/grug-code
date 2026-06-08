@@ -248,11 +248,10 @@ export const makeCommandRunner = (): CommandRunner => {
         const shiftedPort = String(3100 + Math.floor(Math.random() * 1000));
         const shiftedBackendPort = String(4300 + Math.floor(Math.random() * 1000));
 
-        const envOverrides: Record<string, string> = {
+                const envOverrides: Record<string, string> = {
           NODE_ENV: "test",
           PORT: shiftedPort,
           BACKEND_PORT: shiftedBackendPort,
-          SURGICAL_ROUTER_SOCKET_PATH: config.surgical.socketPath,
         };
 
         const result = yield* run(args, { 

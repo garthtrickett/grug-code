@@ -315,37 +315,7 @@ export const app = new Elysia({
     return "Development Server: Build output is not present in `./dist`. Use the Vite dev server on port 3000.";
   });
 
-export const udsApp = new Elysia({
-  serve: {
-    unix: config.surgical.socketPath,
-  }
-})
-  .onError(({ code, error, request }) => {
-    console.error(`[UDS Global Error] ${String(request.method)} ${String(request.url)} - ${String(code)}`, error);
-  })
-  .onRequest(({ request }) => {
-    console.info(`📡 [UDS HTTP] ${String(request.method)} ${String(request.url)}`);
-  })
-  .use(effectPlugin)
-  .use(authRoutes)
-  .use(workspaceRoutes)
-  .use(projectRoutes)
-  .use(mcpRoutes);
 
-const originalUdsStop = udsApp.stop.bind(udsApp);
-udsApp.stop = async () => {
-  await originalUdsStop();
-  try {
-    const socketPath = config.surgical.socketPath;
-    if (fs.existsSync(socketPath)) {
-      fs.unlinkSync(socketPath);
-      console.info(`🧹 [UDS Shutdown] Cleaned up Unix socket file: ${String(socketPath)}`);
-    }
-  } catch (err) {
-    console.error(`⚠️ [UDS Shutdown] Failed to cleanup Unix socket file: ${String(err)}`);
-  }
-  return udsApp;
-};
 
 const shouldRunServers = 
   process.env.NODE_ENV !== "test" && 
@@ -356,53 +326,6 @@ if (shouldRunServers) {
   const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
   app.listen(port);
   console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
-
-  const socketPath = config.surgical.socketPath;
-  try {
-    const dir = path.dirname(socketPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    if (fs.existsSync(socketPath)) {
-      fs.unlinkSync(socketPath);
-    }
-  } catch (err) {
-    console.warn(`[UDS Startup] Failed to prepare socket path directory or unlink stale socket: ${String(err)}`);
-  }
-
-  udsApp.listen({ unix: config.surgical.socketPath });
-  console.info(`🔌 [UDS Server] Unix Domain Socket server is listening at ${String(socketPath)}`);
-
-  const cleanupSocket = () => {
-    try {
-      if (fs.existsSync(socketPath)) {
-        fs.unlinkSync(socketPath);
-        console.info(`🧹 [Shutdown] Cleaned up Unix socket: ${String(socketPath)}`);
-      }
-    } catch (err) {
-      console.error(`⚠️ [Shutdown] Failed to cleanup Unix socket: ${String(err)}`);
-    }
-  };
-
-  process.on("SIGINT", () => {
-    cleanupSocket();
-    process.exit(0);
-  });
-
-  process.on("SIGTERM", () => {
-    cleanupSocket();
-    process.exit(0);
-  });
-
-  process.on("uncaughtException", (err) => {
-    console.error("🔥 [UDS Fatal] Uncaught Exception caught on process:", err);
-    cleanupSocket();
-    process.exit(1);
-  });
-
-  process.on("exit", () => {
-    cleanupSocket();
-  });
 }
 
 export type App = typeof app;

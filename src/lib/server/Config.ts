@@ -43,20 +43,9 @@ export const config = {
   deepseek: {
     apiKey: getEnvOrDefault("DEEPSEEK_API_KEY", ""),
   },
-  surgical: {
+    surgical: {
     surgicalRouterEnabled: getEnvOrDefault("SURGICAL_ROUTER_ENABLED", "true") === "true",
     fileLimit: parseInt(getEnvOrDefault("SURGICAL_ROUTER_FILE_LIMIT", "3"), 10),
     tokenLimit: parseInt(getEnvOrDefault("SURGICAL_ROUTER_TOKEN_LIMIT", "20000"), 10),
-    socketPath: getEnvOrDefault("SURGICAL_ROUTER_SOCKET_PATH", (() => {
-      try {
-        return path.join(os.tmpdir(), "grug.sock");
-      } catch {
-        try {
-          return path.join(os.homedir(), "grug.sock");
-        } catch {
-          return "/tmp/grug.sock";
-        }
-      }
-    })()),
   },
 };
