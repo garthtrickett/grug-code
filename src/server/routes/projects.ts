@@ -4,6 +4,7 @@ import { db } from "../../db/client.ts";
 import { securityMiddleware } from "../middleware/security.ts";
 import { effectPlugin } from "../middleware/effect-plugin.ts";
 import type { ProjectId } from "../../types/index.ts";
+import { ProjectStructureMapper, ProjectStructureMapperLive } from "../../features/agent/ProjectStructureMapper.ts";
 
 export const projectRoutes = new Elysia({ prefix: "/api/projects" })
   .use(effectPlugin)
@@ -39,18 +40,32 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     }
     return result.right;
   })
-  .post("/", async ({ body, runEffect, set }) => {
+    .post("/", async ({ body, runEffect, set }) => {
     const id = crypto.randomUUID() as ProjectId;
+    
+    const detectEffect = Effect.gen(function* () {
+      if (body.uses_devcontainer !== undefined && body.uses_devcontainer !== null) {
+        return body.uses_devcontainer;
+      }
+      const mapper = yield* ProjectStructureMapper;
+      return yield* mapper.detectDevContainer(body.root_path);
+    }).pipe(
+      Effect.provide(ProjectStructureMapperLive)
+    );
+
+    const usesDevContainer = await runEffect(detectEffect);
+
     const effect = Effect.tryPromise({
       try: () => db.insertInto("project")
         .values({
           id,
           name: body.name,
           root_path: body.root_path,
-                    type_check_command: body.type_check_command ?? null,
+          type_check_command: body.type_check_command ?? null,
           lint_command: body.lint_command ?? null,
           test_command: body.test_command ?? null,
           startup_command: body.startup_command ?? null,
+          uses_devcontainer: usesDevContainer,
         })
         .returningAll()
         .executeTakeFirstOrThrow(),
@@ -74,26 +89,41 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     }
     return result.right;
   }, {
-        body: t.Object({
+    body: t.Object({
       name: t.String({ minLength: 1 }),
       root_path: t.String({ minLength: 1 }),
-            type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
+      type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
       lint_command: t.Optional(t.Union([t.String(), t.Null()])),
       test_command: t.Optional(t.Union([t.String(), t.Null()])),
       startup_command: t.Optional(t.Union([t.String(), t.Null()])),
+      uses_devcontainer: t.Optional(t.Union([t.Boolean(), t.Null()]))
     })
   })
-  .put("/:id", async ({ params, body, runEffect, set }) => {
+    .put("/:id", async ({ params, body, runEffect, set }) => {
     const id = params.id as ProjectId;
+
+    const detectEffect = Effect.gen(function* () {
+      if (body.uses_devcontainer !== undefined && body.uses_devcontainer !== null) {
+        return body.uses_devcontainer;
+      }
+      const mapper = yield* ProjectStructureMapper;
+      return yield* mapper.detectDevContainer(body.root_path);
+    }).pipe(
+      Effect.provide(ProjectStructureMapperLive)
+    );
+
+    const usesDevContainer = await runEffect(detectEffect);
+
     const effect = Effect.tryPromise({
       try: () => db.updateTable("project")
         .set({
           name: body.name,
           root_path: body.root_path,
-                    type_check_command: body.type_check_command ?? null,
+          type_check_command: body.type_check_command ?? null,
           lint_command: body.lint_command ?? null,
           test_command: body.test_command ?? null,
           startup_command: body.startup_command ?? null,
+          uses_devcontainer: usesDevContainer,
           updated_at: new Date(),
         })
         .where("id", "=", id)
@@ -112,7 +142,7 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     if (result._tag === "Left") {
       if (result.left.message === "Project with this root_path already exists") {
         set.status = 409;
-      } else {
+      } else { 
         set.status = 500;
       }
       return { error: result.left.message };
@@ -123,13 +153,14 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     }
     return result.right;
   }, {
-        body: t.Object({
+    body: t.Object({
       name: t.String({ minLength: 1 }),
       root_path: t.String({ minLength: 1 }),
-            type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
+      type_check_command: t.Optional(t.Union([t.String(), t.Null()])),
       lint_command: t.Optional(t.Union([t.String(), t.Null()])),
       test_command: t.Optional(t.Union([t.String(), t.Null()])),
       startup_command: t.Optional(t.Union([t.String(), t.Null()])),
+      uses_devcontainer: t.Optional(t.Union([t.Boolean(), t.Null()]))
     })
   })
   .delete("/:id", async ({ params, runEffect, set }) => {

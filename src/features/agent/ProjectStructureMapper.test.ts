@@ -59,9 +59,41 @@ describe("ProjectStructureMapper - Codebase Flat Directory Workspace Indexer", (
 
     // Verify ignored extensions (.png, .pdf) are skipped
     expect(parsedList).not.toContain("assets/avatar.png");
-    expect(parsedList).not.toContain("assets/document.pdf");
+        expect(parsedList).not.toContain("assets/document.pdf");
 
     // Ensure overall count aligns with valid structural entries only
     expect(parsedList.length).toBe(3);
+  });
+
+  it("should detect usesDevContainer as true when .devcontainer.json exists", async () => {
+    await fs.writeFile(path.join(tempDir, ".devcontainer.json"), "{}");
+
+    const program = Effect.flatMap(ProjectStructureMapper, (mapper) =>
+      mapper.detectDevContainer(tempDir)
+    ).pipe(Effect.provide(ProjectStructureMapperLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toBe(true);
+  });
+
+  it("should detect usesDevContainer as true when .devcontainer/devcontainer.json exists", async () => {
+    await fs.mkdir(path.join(tempDir, ".devcontainer"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, ".devcontainer/devcontainer.json"), "{}");
+
+    const program = Effect.flatMap(ProjectStructureMapper, (mapper) =>
+      mapper.detectDevContainer(tempDir)
+    ).pipe(Effect.provide(ProjectStructureMapperLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toBe(true);
+  });
+
+  it("should detect usesDevContainer as false when no devcontainer configuration exists", async () => {
+    const program = Effect.flatMap(ProjectStructureMapper, (mapper) =>
+      mapper.detectDevContainer(tempDir)
+    ).pipe(Effect.provide(ProjectStructureMapperLive));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toBe(false);
   });
 });

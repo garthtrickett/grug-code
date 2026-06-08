@@ -6,6 +6,7 @@ export interface IProjectStructureMapper {
   readonly mapProject: (options: {
     readonly cwd?: string;
   }) => Effect.Effect<string, Error>;
+  readonly detectDevContainer: (cwd?: string) => Effect.Effect<boolean, Error>;
 }
 
 export class ProjectStructureMapper extends Context.Tag("ProjectStructureMapper")<
@@ -91,10 +92,29 @@ export const ProjectStructureMapperLive = Layer.succeed(
 
         filePaths.sort();
 
-        const formattedPayload = JSON.stringify(filePaths, null, 2);
+                const formattedPayload = JSON.stringify(filePaths, null, 2);
         yield* Effect.logInfo(`[ProjectStructureMapper] Map compiled successfully. Indexed ${filePaths.length} files.`);
 
         return formattedPayload;
+      }),
+
+    detectDevContainer: (cwd) =>
+      Effect.gen(function* () {
+        const rootDir = path.resolve(cwd || process.cwd());
+        const path1 = path.join(rootDir, ".devcontainer.json");
+        const path2 = path.join(rootDir, ".devcontainer", "devcontainer.json");
+
+        const exists = (filePath: string) =>
+          Effect.tryPromise({
+            try: () => fs.stat(filePath).then(() => true).catch(() => false),
+            catch: () => false,
+          });
+
+        const hasJson = yield* exists(path1);
+        if (hasJson) return true;
+
+        const hasFolderJson = yield* exists(path2);
+        return hasFolderJson;
       }),
   })
 );

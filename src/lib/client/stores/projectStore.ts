@@ -8,10 +8,11 @@ export interface Project {
   readonly id: string;
   readonly name: string;
   readonly root_path: string;
-    readonly type_check_command: string | null;
+  readonly type_check_command: string | null;
   readonly lint_command: string | null;
   readonly test_command: string | null;
   readonly startup_command: string | null;
+  readonly uses_devcontainer?: boolean;
 }
 
 export const projectsSignal = signal<readonly Project[]>([]);
