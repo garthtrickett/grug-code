@@ -188,7 +188,11 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
   })
   .post("/init", async ({ body, runEffect, set }) => {
     const controller = makeWorkspaceController(body.cwd);
-    const effect = controller.initTransaction(body.taskId, body.provider, body.tasks);
+    const mappedTasks = body.tasks?.map((t) => ({
+      ...t,
+      developerNotes: t.developerNotes ?? null,
+    }));
+    const effect = controller.initTransaction(body.taskId, body.provider, mappedTasks);
     const res = await runEffect(Effect.either(effect));
     if (res._tag === "Left") {
       set.status = 400;
@@ -358,13 +362,17 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     })
   })
   .post("/execute-step", async ({ body, runEffect, set }) => {
+    const mappedTasks = body.tasks?.map((t) => ({
+      ...t,
+      developerNotes: t.developerNotes ?? null,
+    }));
     const effect = Effect.flatMap(CorrectionLoop, (loop) =>
       loop.runStep({
         tx: body.tx,
         targetFiles: body.targetFiles,
         instructions: body.instructions,
         cwd: body.cwd,
-        tasks: body.tasks,
+        tasks: mappedTasks,
         currentTaskId: body.currentTaskId
       })
     ).pipe(

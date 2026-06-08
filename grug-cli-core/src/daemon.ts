@@ -105,9 +105,9 @@ server.tool(
 export const mcpTransports = new Map<string, SSEServerTransport>();
 
 class ElysiaMockResponse extends ServerResponse {
-  private controller: any;
+  private controller: ReadableStreamDefaultController<string>;
 
-  constructor(controller: any) {
+  constructor(controller: ReadableStreamDefaultController<string>) {
     const socket = new Socket();
     const req = new IncomingMessage(socket);
     super(req);
@@ -158,7 +158,7 @@ export const createDaemonApp = () => {
 
       const stream = new ReadableStream({
         async start(controller) {
-          const mockRes = new ElysiaMockResponse(controller);
+          const mockRes = new ElysiaMockResponse(controller as ReadableStreamDefaultController<string>);
           const transport = new SSEServerTransport("/api/mcp/messages", mockRes);
           mcpTransports.set(transport.sessionId, transport);
           activeTransport = transport;

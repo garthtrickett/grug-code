@@ -160,7 +160,7 @@ Grug applied patch success.
     expect(fs.stat(stateFile).then(() => true).catch(() => false)).resolves.toBe(false);
 
     const dummyTasks = [
-      { id: "task-1", description: "Write metadata logic", targetFiles: ["src/a.ts"], status: "pending" as const }
+      { id: "task-1", description: "Write metadata logic", targetFiles: ["src/a.ts"], status: "pending" as const, developerNotes: null }
     ];
     const tx = await Effect.runPromise(controller.initTransaction("task-metadata-lifecycle", "openai", dummyTasks));
 
@@ -177,7 +177,7 @@ Grug applied patch success.
     expect(readState1?.tasks[0]?.description).toBe("Write metadata logic");
 
     const updatedTasks = [
-      { id: "task-1", description: "Write metadata logic", targetFiles: ["src/a.ts"], status: "completed" as const }
+      { id: "task-1", description: "Write metadata logic", targetFiles: ["src/a.ts"], status: "completed" as const, developerNotes: null }
     ];
     await fs.writeFile(path.join(tempDir, "initial.txt"), "Modified.\n");
     const tx2 = await Effect.runPromise(controller.createCheckpoint(tx, "first-checkpoint", updatedTasks));
@@ -195,7 +195,7 @@ Grug applied patch success.
     expect(existsAfterAbort).toBe(false);
   });
 
-    it("should execute project-specific commands if a registered project matches root_path === cwd", async () => {
+  it("should execute project-specific commands if a registered project matches root_path === cwd", async () => {
     const absoluteTempDir = path.resolve(tempDir);
     const projectId = crypto.randomUUID() as ProjectId;
 

@@ -40,7 +40,7 @@ describe("Interactive CLI Prompts Test Suite", () => {
   });
 
   it("should fall back to local execution cleanly if daemon is offline", async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error("Daemon unreachable"));
+    global.fetch = vi.fn().mockRejectedValue(new Error("Daemon unreachable")) as any;
 
     const mockMapper = Layer.succeed(
       ProjectStructureMapper,
@@ -53,13 +53,14 @@ describe("Interactive CLI Prompts Test Suite", () => {
       ResearchLoop,
       ResearchLoop.of({
         run: () => Effect.succeed({
-          status: "resolved",
+          status: "resolved" as const,
           target_files: ["src/main.ts"],
           plan: [{
             id: "step-1",
             description: "Mock main.ts step",
             targetFiles: ["src/main.ts"],
-            status: "pending"
+            status: "pending" as const,
+            developerNotes: null
           }]
         })
       })
@@ -117,7 +118,8 @@ describe("Interactive CLI Prompts Test Suite", () => {
               id: "step-1",
               description: "Mock main.ts step",
               targetFiles: ["src/main.ts"],
-              status: "pending"
+              status: "pending",
+              developerNotes: null
             }]
           })
         }]

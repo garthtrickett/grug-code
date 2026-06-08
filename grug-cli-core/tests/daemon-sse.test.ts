@@ -66,7 +66,8 @@ describe("Daemon MCP SSE Transport", () => {
     expect(initResult.result?.protocolVersion).toBeDefined();
 
     const listToolsRequest = {
-      jsonrpc: "2.0",\n      id: 2,
+      jsonrpc: "2.0",
+      id: 2,
       method: "tools/list"
     };
 

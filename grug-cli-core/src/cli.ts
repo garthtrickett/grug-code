@@ -6,6 +6,7 @@ import { AiServiceLive } from "./lib/AiService.ts";
 import { TreeSitterParserLive } from "./lib/TreeSitterParser.ts";
 import { SurgicalRouterLive } from "./features/SurgicalRouter.ts";
 import { TokenEstimatorLive } from "./lib/TokenEstimator.ts";
+import type { PlanTask } from "./lib/ai-schemas.ts";
 
 const CliLive = SurgicalRouterLive.pipe(
   Layer.provideMerge(
@@ -28,6 +29,21 @@ const checkCancel = (value: unknown) => {
   }
 };
 
+interface McpToolResult {
+  readonly content: ReadonlyArray<{
+    readonly type: "text";
+    readonly text: string;
+  }>;
+}
+
+interface PlanningResult {
+  readonly status: "discussion" | "resolved";
+  readonly discussionText?: string;
+  readonly suggestedOptions?: readonly string[];
+  readonly target_files?: readonly string[];
+  readonly plan?: readonly PlanTask[];
+}
+
 export const runCli = () =>
   Effect.gen(function* () {
     p.intro("🥟 Grug Code CLI Companion");
@@ -47,19 +63,18 @@ export const runCli = () =>
       promptArg = promptInput as string;
     }
 
-        const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : 3010;
+    const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : 3010;
     let isDaemonOnline = false;
 
-    try {
-      const healthCheck = await fetch(`http://localhost:${port}/api/health`);
-      if (healthCheck.ok) {
-        isDaemonOnline = true;
-      }
-    } catch {
-      // Offline fallback
-    }
+    const checkDaemon = Effect.promise(() =>
+      fetch(`http://localhost:${port}/api/health`)
+    ).pipe(
+      Effect.map((res) => res.ok),
+      Effect.catchAll(() => Effect.succeed(false))
+    );
+    isDaemonOnline = yield* checkDaemon;
 
-    const callDaemonTool = (toolName: string, args: Record<string, any>) =>
+    const callDaemonTool = (toolName: string, args: Record<string, unknown>) =>
       Effect.promise(async () => {
         const sseResponse = await fetch(`http://localhost:${port}/api/mcp/sse`);
         if (!sseResponse.ok) throw new Error("SSE connection failed");
@@ -67,8 +82,9 @@ export const runCli = () =>
         const reader = sseResponse.body?.getReader();
         if (!reader) throw new Error("Failed to get reader");
 
-        const { value } = await reader.read();
-        const rawText = new TextDecoder().decode(value);
+                const readResult = await reader.read();
+        const value: unknown = readResult.value;
+        const rawText = value instanceof Uint8Array ? new TextDecoder().decode(value) : "";
         const sessionIdMatch = /sessionId=([a-zA-Z0-9\\-]+)/.exec(rawText);
         const sessionId = sessionIdMatch?.[1];
         if (!sessionId) {
@@ -106,11 +122,19 @@ export const runCli = () =>
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(callRequest)
         });
-        const callResult = await callRes.json() as any;
+        const callResult = (await callRes.json()) as {
+          readonly result?: McpToolResult;
+          readonly error?: {
+            readonly message?: string;
+          };
+        };
         await reader.cancel();
 
         if (callResult.error) {
           throw new Error(callResult.error.message || "Tool execution failed");
+        }
+        if (!callResult.result) {
+          throw new Error("Tool execution returned no result");
         }
         return callResult.result;
       });
@@ -123,7 +147,7 @@ export const runCli = () =>
       s.message("Grug scanning workspace directories (via Daemon)...");
       try {
         const callResult = yield* callDaemonTool("grug_map_project", {});
-        projectStructure = callResult.content[0].text;
+        projectStructure = callResult.content[0]?.text || "";
       } catch (err) {
         s.stop();
         p.note(`Failed to scan directories via daemon: ${String(err)}. Falling back to local execution.`, "⚠️ Warning");
@@ -145,7 +169,7 @@ export const runCli = () =>
 
     while (!resolved) {
       const mode = turnHistory.length > 0 ? "discussion" : "standard";
-      let result: any;
+      let result: PlanningResult | null = null;
 
       if (isDaemonOnline) {
         s.message("Grug pre-planning implementation loop (via Daemon)...");
@@ -157,7 +181,11 @@ export const runCli = () =>
             mode,
             history: turnHistory,
           });
-          result = JSON.parse(callResult.content[0].text);
+          const text = callResult.content[0]?.text;
+          if (!text) {
+            throw new Error("Empty response from daemon skeletal research tool");
+          }
+          result = JSON.parse(text) as PlanningResult;
         } catch (err) {
           s.stop();
           p.note(`Failed to execute planning via daemon: ${String(err)}. Falling back to local execution.`, "⚠️ Warning");
@@ -166,7 +194,7 @@ export const runCli = () =>
         }
       }
 
-      if (!isDaemonOnline) {
+      if (!isDaemonOnline || result === null) {
         const loop = yield* ResearchLoop;
         result = yield* loop.run({
           userPrompt: currentPrompt,
@@ -182,7 +210,8 @@ export const runCli = () =>
       if (result.status === "discussion") {
         p.note(result.discussionText || "", "Grug Advisory Discussion");
 
-        const options = (result.suggestedOptions || []).map((o) => ({
+        const suggestedOptions = result.suggestedOptions || [];
+        const options = suggestedOptions.map((o: string) => ({
           value: o,
           label: o,
         }));
@@ -231,14 +260,14 @@ export const runCli = () =>
         const plan = result.plan || [];
 
         p.note(
-          plan.map((t, i) => `${i + 1}. ${t.description} (Targets: ${t.targetFiles.join(", ") || "none"})`).join("\n"),
+          plan.map((t: PlanTask, i: number) => `${i + 1}. ${t.description} (Targets: ${t.targetFiles.join(", ") || "none"})`).join("\n"),
           "Proposed Implementation Steps"
         );
 
         const selectedFiles = yield* Effect.promise(() =>
           p.multiselect({
             message: "Confirm target files to proceed with:",
-            options: files.map((f) => ({ value: f, label: f, hint: "target" })),
+            options: files.map((f: string) => ({ value: f, label: f, hint: "target" })),
             required: false,
           })
         );

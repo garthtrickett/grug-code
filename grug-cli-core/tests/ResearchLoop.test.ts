@@ -22,13 +22,13 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
     Layer.succeed(
       AiService,
       AiService.of({
-        generateStructuredObject: (options: any) =>
+        generateStructuredObject: <T>(options: any): Effect.Effect<T, AIInferenceError, never> =>
           Effect.sync(() => {
             capturedProviders.push(options.provider);
             const res = responses[callCount];
             if (res) {
               callCount++;
-              return { response: res };
+              return { response: res } as unknown as T;
             }
             throw new Error("No response mocked for current call index");
           }),
