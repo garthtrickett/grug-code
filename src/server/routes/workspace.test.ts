@@ -41,7 +41,7 @@ describe("Elysia Companion Server - Workspace endpoints", () => {
     await execPromise("git config user.email 'api@test.com'", { cwd: tempDir });
     await execPromise("git config commit.gpgSign false", { cwd: tempDir });
 
-        await fs.writeFile(path.join(tempDir, "initial.txt"), "Original codebase line.\n");
+    await fs.writeFile(path.join(tempDir, "initial.txt"), "Original codebase line.\n");
     await fs.writeFile(path.join(tempDir, "main.ts"), "const x: number = 10;\nconsole.log(x);\n");
     await fs.writeFile(
       path.join(tempDir, "tsconfig.json"),
@@ -449,9 +449,11 @@ export function hello(name: string): string {
     // Mock AI service to return discussion state when called
     mockGenerateStructuredObject.mockReturnValue(
       Effect.succeed({
-        status: "discussion",
-        discussionText: "Grug has analyzed your codebase. Let's discuss Option A vs Option B.",
-        suggestedOptions: ["Compare Option A and B", "Go straight to Option A"]
+        response: {
+          status: "discussion",
+          discussionText: "Grug has analyzed your codebase. Let's discuss Option A vs Option B.",
+          suggestedOptions: ["Compare Option A and B", "Go straight to Option A"]
+        }
       })
     );
 
@@ -602,7 +604,7 @@ export function hello(name: string): string {
     );
   });
 
-  it("should stream progress updates over UDS SSE cleanly as stream frames", async () => {
+  it("should stream progress updates over UDS SSE cleanly as stream frames", async ({  }) => {
     const testSocketPath = path.resolve(`/tmp/grug-test-sse-${crypto.randomUUID()}.sock`);
     console.info("[Test:SSE] Starting test with socket path:", testSocketPath);
     
