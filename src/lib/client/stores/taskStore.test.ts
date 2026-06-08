@@ -19,14 +19,12 @@ import {
   suggestedOptionsSignal,
   isDiscussingSignal,
 } from "./taskStore";
-import { hlcStore, hlcSignal } from "./hlcStore";
 
 describe("taskStore - Client State Machine & Signal Coordinator", () => {
   const originalFetch = global.fetch;
 
-  beforeEach(async () => {
+    beforeEach(async () => {
     await runClientPromise(taskStore.clear());
-    await runClientPromise(hlcStore.clear());
     setGrugToken("mock-session-grug-token");
   });
 
@@ -71,9 +69,7 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
       json: async () => mockTx,
     }) as any;
 
-    const initialHlcValue = hlcSignal.peek().physical;
-
-    // Pause queue initially to prevent background autopilot run during initialization assertion
+        // Pause queue initially to prevent background autopilot run during initialization assertion
     isPausedSignal.value = true;
 
     const action = taskStore.initTaskQueue("task-001", "Create popup component", ["src/components/Popup.ts"]);
@@ -86,9 +82,6 @@ describe("taskStore - Client State Machine & Signal Coordinator", () => {
     expect(tasksSignal.value[0]?.status).toBe("completed");
     expect(tasksSignal.value[1]?.status).toBe("pending");
     expect(errorSignal.value).toBeNull();
-
-    // Verify HLC clock ticked causal timestamp forward
-    expect(hlcSignal.peek().physical).toBeGreaterThanOrEqual(initialHlcValue);
   });
 
   it("should format initialization payloads with subfolder scopes correctly on initTaskQueue", async () => {

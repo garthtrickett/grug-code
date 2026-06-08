@@ -51,14 +51,8 @@ const bootstrapApp = Effect.gen(function* () {
 
   yield* clientLog("info", "[Main] Initiating Grug Code bootstrap sequence...");
 
-  // 1. Hydrate local HLC state to ensure clock validity during early mutations
-  yield* clientLog("info", "[Main] Hydrating local HLC state from IndexedDB...");
-  const { hlcStore } = yield* Effect.promise(() => import("./lib/client/stores/hlcStore.ts"));
-  yield* hlcStore.load();
-  yield* clientLog("debug", `[Main] HLC state hydrated: hlc=${hlcStore.getPacked()}`);
-
-  // 3. Hydrate User Preferences storage from IndexedDB
-  yield* clientLog("info", "[Main] Hydrating User Preferences storage from IndexedDB...");
+    // Hydrate User Preferences storage from localStorage
+  yield* clientLog("info", "[Main] Hydrating User Preferences storage...");
   const { userPreferencesStore } = yield* Effect.promise(() => import("./lib/client/stores/userPreferencesStore.ts"));
   yield* userPreferencesStore.load();
   yield* clientLog("debug", `[Main] User preferences hydrated: reviewLimit=${userPreferencesStore.dailyReviewLimit.value}`);

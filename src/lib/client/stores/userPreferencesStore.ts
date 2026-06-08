@@ -1,73 +1,60 @@
-import { createLocalStore } from "../storage/LocalStoreFactory.ts";
+import { signal, computed } from "@preact/signals-core";
 import { Effect } from "effect";
-import { computed } from "@preact/signals-core";
 
 export interface UserPreferences {
-  readonly id: "settings";
   readonly dailyReviewLimit: number;
   readonly dailyNewRuleLimit: number;
   readonly enforceMasteryGates: boolean;
-  readonly hlc?: string;
 }
 
-const basePreferencesStore = createLocalStore<UserPreferences>("user_preferences");
+const DEFAULT_PREFERENCES: UserPreferences = {
+  dailyReviewLimit: 20,
+  dailyNewRuleLimit: 3,
+  enforceMasteryGates: true,
+};
+
+const getStoredPreferences = (): UserPreferences => {
+  if (typeof localStorage === "undefined") return DEFAULT_PREFERENCES;
+  const stored = localStorage.getItem("grug-user-preferences");
+  if (!stored) return DEFAULT_PREFERENCES;
+  try {
+    return JSON.parse(stored) as UserPreferences;
+  } catch {
+    return DEFAULT_PREFERENCES;
+  }
+};
+
+const preferencesSignal = signal<UserPreferences>(getStoredPreferences());
 
 export const userPreferencesStore = {
-  ...basePreferencesStore,
+  load: () =>
+    Effect.gen(function* () {
+      const prefs = getStoredPreferences();
+      preferencesSignal.value = prefs;
+    }),
 
-  load: () => {
-    const effect = Effect.gen(function* () {
-      yield* basePreferencesStore.load();
-      const current = basePreferencesStore.state.peek();
-      if (current.length === 0) {
-        yield* basePreferencesStore.put({
-          id: "settings",
-          dailyReviewLimit: 20,
-          dailyNewRuleLimit: 3,
-          enforceMasteryGates: true,
-        });
-      } else {
-        const settings = current.find((p) => p.id === "settings");
-        if (settings && settings.enforceMasteryGates === undefined) {
-          yield* basePreferencesStore.put({
-            ...settings,
-            enforceMasteryGates: true,
-          });
-        }
-      }
-    });
-    return effect;
-  },
-
-  updateLimits: (dailyReviewLimit: number, dailyNewRuleLimit: number, enforceMasteryGates: boolean = true) => {
-    const effect = Effect.gen(function* () {
-      const { hlcStore } = yield* Effect.promise(() => import("./hlcStore.ts"));
-      const currentHlc = yield* hlcStore.tick();
-
+  updateLimits: (dailyReviewLimit: number, dailyNewRuleLimit: number, enforceMasteryGates: boolean = true) =>
+    Effect.gen(function* () {
       const updated: UserPreferences = {
-        id: "settings",
         dailyReviewLimit,
         dailyNewRuleLimit,
         enforceMasteryGates,
-        hlc: currentHlc,
       };
-      yield* basePreferencesStore.put(updated);
-    });
-    return effect;
-  },
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("grug-user-preferences", JSON.stringify(updated));
+      }
+      preferencesSignal.value = updated;
+    }),
 
-  dailyReviewLimit: computed(() => {
-    const record = basePreferencesStore.state.value.find((p) => p.id === "settings");
-    return record ? record.dailyReviewLimit : 20;
-  }),
+  clear: () =>
+    Effect.gen(function* () {
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("grug-user-preferences");
+      }
+      preferencesSignal.value = DEFAULT_PREFERENCES;
+    }),
 
-  dailyNewRuleLimit: computed(() => {
-    const record = basePreferencesStore.state.value.find((p) => p.id === "settings");
-    return record ? record.dailyNewRuleLimit : 3;
-  }),
-
-  enforceMasteryGates: computed(() => {
-    const record = basePreferencesStore.state.value.find((p) => p.id === "settings");
-    return record && record.enforceMasteryGates !== undefined ? record.enforceMasteryGates : true;
-  }),
+  dailyReviewLimit: computed(() => preferencesSignal.value.dailyReviewLimit),
+  dailyNewRuleLimit: computed(() => preferencesSignal.value.dailyNewRuleLimit),
+  enforceMasteryGates: computed(() => preferencesSignal.value.enforceMasteryGates),
 };
