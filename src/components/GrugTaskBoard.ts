@@ -961,13 +961,16 @@ export class GrugTaskBoard extends LitElement {
               <!-- Active Plan Queue & Checklist -->
               <div class="bg-zinc-950 border border-zinc-800 p-6 rounded-lg shadow-md space-y-6">
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
-                  <div>
-                    <h2 class="text-lg font-bold text-white tracking-tight">Workspace Transaction: ${tx.id}</h2>
-                    <p class="text-xs text-zinc-400 mt-0.5">
-                      Base: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.baseBranch}</span> 
-                      &rarr; Ephemeral Branch: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.ephemeralBranch}</span>
-                    </p>
-                  </div>
+                                  <div>
+                  <h2 class="text-lg font-bold text-white tracking-tight">Workspace Transaction: ${tx.id}</h2>
+                  <p class="text-xs text-zinc-400 mt-0.5">
+                    Base: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.baseBranch}</span> 
+                    &rarr; Ephemeral Branch: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.ephemeralBranch}</span>
+                  </p>
+                  <p class="text-[10px] text-zinc-500 mt-1">
+                    💡 To follow execution progress in your terminal, run: <span class="font-mono bg-zinc-900 px-1 py-0.5 rounded">bun run src/cli.ts logs --follow ${tx.id}</span>
+                  </p>
+                </div>
                   <div class="flex items-center gap-2">
                     <button 
                       @click=${this.handlePauseToggle}

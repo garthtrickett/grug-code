@@ -71,7 +71,14 @@ export interface WorkspaceController {
   readonly deleteWorktree: (tx: GitTransaction) => Effect.Effect<void, Error>;
 }
 
-const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, startupCommand?: string | null, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+const runCommand = (
+  args: string[],
+  cwd?: string,
+  env?: Record<string, string>,
+  startupCommand?: string | null,
+  onStdout?: (data: string) => void,
+  onStderr?: (data: string) => void
+) =>
   Effect.tryPromise({
     try: () => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
       let [command, ...cmdArgs] = args;
@@ -279,7 +286,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),
 
-    runTypeCheck: (_tx: GitTransaction) =>
+    runTypeCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_start" }));
@@ -288,7 +295,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         const cmd = proj && proj.type_check_command
           ? parseCommandString(proj.type_check_command)
           : ["bun", "x", "tsc", "--noEmit"];
-        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command);
+        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command, onStdout, onStderr);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
@@ -307,7 +314,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runLintCheck: (_tx: GitTransaction) =>
+    runLintCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_start" }));
@@ -318,7 +325,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           return { success: true, dirtyFiles: [] };
         }
         const cmd = parseCommandString(proj.lint_command);
-        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command);
+        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command, onStdout, onStderr);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
@@ -337,7 +344,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runTestSuite: (_tx: GitTransaction) =>
+    runTestSuite: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_start" }));
@@ -346,7 +353,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         const cmd = proj && proj.test_command
           ? parseCommandString(proj.test_command)
           : ["bun", "run", "test"];
-        const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" }, proj?.startup_command);
+        const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" }, proj?.startup_command, onStdout, onStderr);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
