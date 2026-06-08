@@ -1,9 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Effect, ManagedRuntime, Layer } from "effect";
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { config } from "./lib/Config.ts";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
 import { z } from "zod";
 import { ProjectStructureMapper, ProjectStructureMapperLive } from "./features/ProjectStructureMapper.ts";
 import { ResearchLoop, ResearchLoopLive } from "./features/ResearchLoop.ts";
@@ -99,12 +102,179 @@ server.tool(
   }
 );
 
+export const mcpTransports = new Map<string, SSEServerTransport>();
+
+class ElysiaMockResponse extends ServerResponse {
+  private controller: any;
+
+  constructor(controller: any) {
+    const socket = new Socket();
+    const req = new IncomingMessage(socket);
+    super(req);
+    this.controller = controller;
+  }
+
+  override writeHead(statusCode: number, ..._args: unknown[]): this {
+    this.statusCode = statusCode;
+    return this;
+  }
+
+  override write(chunk: unknown, ..._args: unknown[]): boolean {
+    const text = typeof chunk === "string" 
+      ? chunk 
+      : chunk instanceof Uint8Array 
+        ? new TextDecoder().decode(chunk) 
+        : String(chunk);
+    try {
+      this.controller.enqueue(text);
+    } catch {}
+    return true;
+  }
+
+  override end(chunk?: unknown, ..._args: unknown[]): this {
+    if (chunk !== undefined && chunk !== null) {
+      this.write(chunk);
+    }
+    try {
+      this.controller.close();
+    } catch {}
+    this.emit("close");
+    return this;
+  }
+}
+
 export const createDaemonApp = () => {
   return new Elysia()
     .use(cors())
     .get("/api/health", () => ({ status: "ok", service: "grug-cli-daemon" }))
     .get("/api/preferences", () => ({ dailyReviewLimit: 20, dailyNewRuleLimit: 3, enforceMasteryGates: true }))
-    .get("/api/auth/me", () => ({ user: { id: "daemon-user", email: "grug@daemon.local", permissions: ["platform:manage"] } }));
+    .get("/api/auth/me", () => ({ user: { id: "daemon-user", email: "grug@daemon.local", permissions: ["platform:manage"] } }))
+    .get("/api/mcp/sse", ({ set }) => {
+      set.headers["Content-Type"] = "text/event-stream";
+      set.headers["Cache-Control"] = "no-cache";
+      set.headers["Connection"] = "keep-alive";
+
+      let activeTransport: SSEServerTransport | null = null;
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const mockRes = new ElysiaMockResponse(controller);
+          const transport = new SSEServerTransport("/api/mcp/messages", mockRes);
+          mcpTransports.set(transport.sessionId, transport);
+          activeTransport = transport;
+
+          await server.connect(transport);
+        },
+        cancel() {
+          if (activeTransport) {
+            try {
+              mcpTransports.delete(activeTransport.sessionId);
+              void activeTransport.close();
+            } catch {}
+          }
+        }
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive"
+        }
+      });
+    })
+    .post("/api/mcp/messages", async ({ query, body, set }) => {
+      const sessionId = query.sessionId;
+      if (!sessionId) {
+        set.status = 400;
+        return { error: "Missing sessionId" };
+      }
+
+      const transport = mcpTransports.get(sessionId);
+      if (!transport) {
+        set.status = 404;
+        return { error: "Session not found" };
+      }
+
+      let responseBody = "";
+      let statusCode = 200;
+      const mockRes = {
+        writeHead(code: number) {
+          statusCode = code;
+          return this;
+        },
+        end(chunk?: unknown) {
+          if (typeof chunk === "string") {
+            responseBody = chunk;
+          } else if (chunk instanceof Buffer) {
+            responseBody = chunk.toString("utf-8");
+          }
+          return this;
+        }
+      } as unknown as ServerResponse;
+
+      const mockReq = {
+        headers: {
+          "content-type": "application/json",
+        },
+      } as unknown as IncomingMessage;
+
+      let lastSentMessage: unknown = null;
+      let resolveMessage: ((msg: unknown) => void) | null = null;
+      const messagePromise = new Promise<unknown>((resolve) => {
+        resolveMessage = resolve;
+      });
+
+      const originalSend = transport.send ? transport.send.bind(transport) : undefined;
+      if (originalSend) {
+        transport.send = async (message: unknown) => {
+          lastSentMessage = message;
+          if (resolveMessage) {
+            resolveMessage(message);
+          }
+          return originalSend(message as Parameters<SSEServerTransport['send']>[0]);
+        };
+      }
+      
+      try {
+        await transport.handlePostMessage(mockReq, mockRes, body);
+        if (!lastSentMessage) {
+          await Promise.race([
+            messagePromise,
+            new Promise((resolve) => setTimeout(resolve, 150))
+          ]);
+        }
+      } catch (err) {
+        if (originalSend) {
+          transport.send = originalSend;
+        }
+        set.status = 500;
+        return { error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        if (originalSend) {
+          transport.send = originalSend;
+        }
+      }
+
+      if (lastSentMessage) {
+        set.status = 200;
+        return lastSentMessage;
+      }
+
+      set.status = statusCode === 202 ? 200 : statusCode;
+      if (responseBody) {
+        try {
+          return JSON.parse(responseBody) as unknown;
+        } catch {
+          return responseBody;
+        }
+      }
+      return "";
+    }, {
+      query: t.Object({
+        sessionId: t.String()
+      })
+    });
 };
 
 if (import.meta.main) {
