@@ -147,13 +147,82 @@ const parseCommandString = (cmdStr: string): string[] => {
   return cmdStr.trim().split(/\s+/).filter(Boolean);
 };
 
+const isDockerRunning = async (): Promise<boolean> => {
+  try {
+    const { execSync } = require("node:child_process");
+    execSync("docker info", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const hasFlakeNix = async (dir: string): Promise<boolean> => {
+  try {
+    await fs.stat(path.join(dir, "flake.nix"));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const wrapVerificationCommand = async (
+  cmd: string[],
+  cwd: string,
+  projectUsesDevContainer: boolean
+): Promise<{ command: string[]; env?: Record<string, string> }> => {
+  if (projectUsesDevContainer) {
+    return {
+      command: ["devcontainer", "exec", "--workspace-folder", cwd, ...cmd],
+    };
+  }
+
+  const dockerActive = await isDockerRunning();
+  const flakeExists = await hasFlakeNix(cwd);
+
+  if (dockerActive && flakeExists) {
+    return {
+      command: [
+        "docker",
+        "run",
+        "--rm",
+        "--network", "none",
+        "-v", "/nix/store:/nix/store:ro",
+        "-v", `${cwd}:${cwd}`,
+        "-w", cwd,
+        "alpine",
+        ...cmd
+      ],
+    };
+  }
+
+  return {
+    command: cmd,
+  };
+};
+
 export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
   const txFile = path.resolve(cwd || process.cwd(), ".grug-active-transaction.json");
 
-  const getProject = () =>
+    const getProject = ()
+    =>
     Effect.gen(function* () {
       if (!cwd) return null;
-      const absoluteCwd = path.resolve(cwd);
+      let absoluteCwd = path.resolve(cwd);
+      try {
+        const gitFilePath = path.join(absoluteCwd, ".git");
+        const gitFileStat = await fs.stat(gitFilePath);
+        if (gitFileStat.isFile()) {
+          const gitFileContent = await fs.readFile(gitFilePath, "utf-8");
+          const match = /gitdir:\s+(.*)\/\.git\/worktrees\//.exec(gitFileContent);
+          if (match && match[1]) {
+            absoluteCwd = path.resolve(match[1]);
+          }
+        }
+      } catch {
+        // ignore if not a worktree or .git file is missing
+      }
+
       const project = yield* Effect.tryPromise({
         try: () => db.selectFrom("project").selectAll().where("root_path", "=", absoluteCwd).executeTakeFirst(),
         catch: (e) => new Error(`Database error looking up project: ${String(e)}`),
@@ -286,16 +355,25 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),
 
-    runTypeCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+        runTypeCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_start" }));
         
         const proj = yield* getProject();
-        const cmd = proj && proj.type_check_command
+        const baseCmd = proj && proj.type_check_command
           ? parseCommandString(proj.type_check_command)
           : ["bun", "x", "tsc", "--noEmit"];
-        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command, onStdout, onStderr);
+
+        const resolvedCwd = cwd || process.cwd();
+        const usesDevContainer = proj ? !!proj.uses_devcontainer : false;
+
+        const wrapped = yield* Effect.promise(() =>
+          wrapVerificationCommand(baseCmd, resolvedCwd, usesDevContainer)
+        );
+
+        const startupCmd = (wrapped.command === baseCmd) ? proj?.startup_command : null;
+        const result = yield* runCommand(wrapped.command, cwd, wrapped.env, startupCmd, onStdout, onStderr);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
@@ -314,7 +392,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runLintCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+        runLintCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_start" }));
@@ -324,8 +402,17 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_success" }));
           return { success: true, dirtyFiles: [] };
         }
-        const cmd = parseCommandString(proj.lint_command);
-        const result = yield* runCommand(cmd, cwd, undefined, proj?.startup_command, onStdout, onStderr);
+        const baseCmd = parseCommandString(proj.lint_command);
+
+        const resolvedCwd = cwd || process.cwd();
+        const usesDevContainer = proj ? !!proj.uses_devcontainer : false;
+
+        const wrapped = yield* Effect.promise(() =>
+          wrapVerificationCommand(baseCmd, resolvedCwd, usesDevContainer)
+        );
+
+        const startupCmd = (wrapped.command === baseCmd) ? proj?.startup_command : null;
+        const result = yield* runCommand(wrapped.command, cwd, wrapped.env, startupCmd, onStdout, onStderr);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
@@ -344,16 +431,25 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-    runTestSuite: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+        runTestSuite: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_start" }));
         
         const proj = yield* getProject();
-        const cmd = proj && proj.test_command
+        const baseCmd = proj && proj.test_command
           ? parseCommandString(proj.test_command)
           : ["bun", "run", "test"];
-        const result = yield* runCommand(cmd, cwd, { NODE_ENV: "test" }, proj?.startup_command, onStdout, onStderr);
+
+        const resolvedCwd = cwd || process.cwd();
+        const usesDevContainer = proj ? !!proj.uses_devcontainer : false;
+
+        const wrapped = yield* Effect.promise(() =>
+          wrapVerificationCommand(baseCmd, resolvedCwd, usesDevContainer)
+        );
+
+        const startupCmd = (wrapped.command === baseCmd) ? proj?.startup_command : null;
+        const result = yield* runCommand(wrapped.command, cwd, { NODE_ENV: "test", ...wrapped.env }, startupCmd, onStdout, onStderr);
         const success = result.exitCode === 0;
         const dirtyFiles = yield* getDirtyFiles();
 
