@@ -147,16 +147,37 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
       },
     });
 
-    expect(executeResponse.status()).toBe(200);
-    const resultTx = (await executeResponse.json()) as {
-      id: string;
-      baseBranch: string;
+        expect(executeResponse.status()).toBe(200);
+    const asyncRes = (await executeResponse.json()) as {
+      status: string;
+      worktreePath: string;
       ephemeralBranch: string;
-      checkpoints: string[];
+      tx: any;
     };
+    expect(asyncRes.status).toBe("running");
 
-    // Verify self-correction successfully resolved both typechecks and unit tests
-    expect(resultTx.checkpoints.length).toBe(1);
+    const worktreePath = asyncRes.worktreePath;
+    let completed = false;
+    for (let i = 0; i < 40; i++) {
+      const exists = await fs.stat(worktreePath).then(() => true).catch(() => false);
+      if (!exists && i > 5) {
+        completed = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    expect(completed).toBe(true);
+
+    // Now query the status endpoint to verify the transaction successfully reconciled checkpoints
+    const statusResponse = await request.get(`/api/workspace/status?cwd=${encodeURIComponent(tempDir)}`, {
+      headers: {
+        "X-Grug-Token": sessionToken,
+      }
+    });
+    expect(statusResponse.status()).toBe(200);
+    const statusData = await statusResponse.json() as { tx: any; tasks: any[] };
+    expect(statusData).not.toBeNull();
+    expect(statusData.tx.checkpoints.length).toBe(1);
 
     // Verify final file is corrected back to valid type and passing value (42)
     const finalContent = await fs.readFile(path.join(tempDir, "main.ts"), "utf-8");
@@ -169,7 +190,7 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
         "X-Grug-Token": sessionToken,
       },
       data: {
-        tx: resultTx,
+        tx: statusData.tx,
         cwd: tempDir,
       },
     });
