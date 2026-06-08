@@ -75,3 +75,5 @@ infra/**/*.tfstate.backup
 infra/**/*.tfvars
 .terraform.lock.hcl
 .android_sdk/
+
+.grug-api-test-*
