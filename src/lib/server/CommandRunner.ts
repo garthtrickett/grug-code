@@ -10,6 +10,8 @@ export interface CommandOptions {
   readonly timeoutMs?: number;
   readonly env?: Record<string, string>;
   readonly startupCommand?: string;
+  readonly onStdout?: (data: string) => void;
+  readonly onStderr?: (data: string) => void;
 }
 
 export interface CommandResult {
@@ -22,9 +24,30 @@ export interface CommandResult {
 
 export interface CommandRunner {
   readonly run: (args: string[], options?: CommandOptions) => Effect.Effect<CommandResult, Error>;
-  readonly runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) => Effect.Effect<VerificationResult, Error>;
-  readonly runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) => Effect.Effect<VerificationResult, Error>;
-  readonly runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) => Effect.Effect<VerificationResult, Error>;
+  readonly runTypeCheck: (
+    cwd?: string,
+    timeoutMs?: number,
+    customCommand?: string,
+    startupCommand?: string,
+    onStdout?: (data: string) => void,
+    onStderr?: (data: string) => void
+  ) => Effect.Effect<VerificationResult, Error>;
+  readonly runLintCheck: (
+    cwd?: string,
+    timeoutMs?: number,
+    customCommand?: string,
+    startupCommand?: string,
+    onStdout?: (data: string) => void,
+    onStderr?: (data: string) => void
+  ) => Effect.Effect<VerificationResult, Error>;
+  readonly runTestSuite: (
+    cwd?: string,
+    timeoutMs?: number,
+    customCommand?: string,
+    startupCommand?: string,
+    onStdout?: (data: string) => void,
+    onStderr?: (data: string) => void
+  ) => Effect.Effect<VerificationResult, Error>;
 }
 
 export const parseTscErrors = (output: string): readonly string[] => {
@@ -156,13 +179,16 @@ export const makeCommandRunner = (): CommandRunner => {
             }, options.timeoutMs);
           }
 
-          child.stdout?.on("data", (chunk: unknown) => {
+                    child.stdout?.on("data", (chunk: unknown) => {
             const text = Buffer.isBuffer(chunk)
               ? chunk.toString("utf-8")
               : typeof chunk === "string"
                 ? chunk
                 : String(chunk);
             stdout += text;
+            if (options?.onStdout) {
+              options.onStdout(text);
+            }
             progressBroadcaster.emit("progress", JSON.stringify({ type: "stdout", text }));
           });
 
@@ -173,6 +199,9 @@ export const makeCommandRunner = (): CommandRunner => {
                 ? chunk
                 : String(chunk);
             stderr += text;
+            if (options?.onStderr) {
+              options.onStderr(text);
+            }
             progressBroadcaster.emit("progress", JSON.stringify({ type: "stderr", text }));
           });
 
@@ -201,10 +230,10 @@ export const makeCommandRunner = (): CommandRunner => {
   return {
     run,
 
-    runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) =>
+        runTypeCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         const args = customCommand ? parseCommandString(customCommand) : ["bun", "x", "tsc", "--noEmit"];
-        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000, startupCommand });
+        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000, startupCommand, onStdout, onStderr });
         
         if (result.success) {
           return { success: true, dirtyFiles: [] };
@@ -219,13 +248,13 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-    runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) =>
+        runLintCheck: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         if (!customCommand) {
           return { success: true, dirtyFiles: [] };
         }
         const args = parseCommandString(customCommand);
-        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000, startupCommand });
+        const result = yield* run(args, { cwd, timeoutMs: timeoutMs ?? 30000, startupCommand, onStdout, onStderr });
         
         if (result.success) {
           return { success: true, dirtyFiles: [] };
@@ -240,7 +269,7 @@ export const makeCommandRunner = (): CommandRunner => {
         };
       }),
 
-    runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string) =>
+        runTestSuite: (cwd?: string, timeoutMs?: number, customCommand?: string, startupCommand?: string, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[CommandRunner] Running operational test suites execution pass...");
         const args = customCommand ? parseCommandString(customCommand) : ["bun", "run", "test"];
@@ -248,7 +277,7 @@ export const makeCommandRunner = (): CommandRunner => {
         const shiftedPort = String(3100 + Math.floor(Math.random() * 1000));
         const shiftedBackendPort = String(4300 + Math.floor(Math.random() * 1000));
 
-                const envOverrides: Record<string, string> = {
+        const envOverrides: Record<string, string> = {
           NODE_ENV: "test",
           PORT: shiftedPort,
           BACKEND_PORT: shiftedBackendPort,
@@ -259,6 +288,8 @@ export const makeCommandRunner = (): CommandRunner => {
           timeoutMs: timeoutMs ?? 45000,
           env: envOverrides,
           startupCommand,
+          onStdout,
+          onStderr,
         });
 
         if (result.success) {

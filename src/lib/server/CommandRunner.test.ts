@@ -52,7 +52,7 @@ describe("CommandRunner - Execution and Spawner System", () => {
     expect(result.timedOut).toBe(false);
   });
 
-  it("should run custom commands when provided in runTypeCheck, runLintCheck and runTestSuite", async () => {
+    it("should run custom commands when provided in runTypeCheck, runLintCheck and runTestSuite", async () => {
     const runner = makeCommandRunner();
     
     const tcResult = await Effect.runPromise(runner.runTypeCheck(undefined, 10000, "echo tc-custom"));
@@ -63,6 +63,36 @@ describe("CommandRunner - Execution and Spawner System", () => {
 
     const tsResult = await Effect.runPromise(runner.runTestSuite(undefined, 10000, "echo test-custom"));
     expect(tsResult.success).toBe(true);
+  });
+
+  it("should trigger onStdout and onStderr callbacks during verification runs", async () => {
+    const runner = makeCommandRunner();
+    
+    let tcOutput = "";
+    const tcResult = await Effect.runPromise(
+      runner.runTypeCheck(
+        undefined,
+        10000,
+        "echo tc-stdout-data",
+        undefined,
+        (data) => { tcOutput += data; }
+      )
+    );
+    expect(tcResult.success).toBe(true);
+    expect(tcOutput).toContain("tc-stdout-data");
+
+    let tsOutput = "";
+    const tsResult = await Effect.runPromise(
+      runner.runTestSuite(
+        undefined,
+        10000,
+        "echo ts-stdout-data",
+        undefined,
+        (data) => { tsOutput += data; }
+      )
+    );
+    expect(tsResult.success).toBe(true);
+    expect(tsOutput).toContain("ts-stdout-data");
   });
 
   it("should enforce timeout budgets strictly and kill hung commands", async () => {
