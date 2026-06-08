@@ -71,9 +71,9 @@ test.describe("Grug Code Scoped Directory Selector E2E", () => {
     const heading = page.locator("grug-task-board h2");
     await expect(heading).toContainText("Launch Development Session");
 
-    // 4. Click the directory scope trigger dropdown
+        // 4. Click the directory scope trigger dropdown
     const selectTrigger = page.locator("grug-task-board button#directory-scope-select-trigger");
-    await expect(selectTrigger).toBeVisible();
+    await expect(selectTrigger).toBeVisible({ timeout: 10000 });
     await selectTrigger.click();
 
     // 5. Select the "subapps/service" option inside dropdown

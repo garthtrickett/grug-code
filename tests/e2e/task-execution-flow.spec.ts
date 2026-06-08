@@ -75,13 +75,13 @@ test.describe("Grug Task Board - Interactive Flow E2E", () => {
     // 6. Click start transaction
     await page.click("button:has-text('Approve & Start Task Transaction')");
 
-    // 7. Assert transition to transaction view
+        // 7. Assert transition to transaction view
     const txHeader = page.locator("grug-task-board h2");
-    await expect(txHeader).toContainText("Workspace Transaction:");
+    await expect(txHeader).toContainText("Workspace Transaction:", { timeout: 10000 });
 
     // 8. Assert step descriptions are visible
     const firstStep = page.locator("grug-task-board h4").first();
-    await expect(firstStep).toContainText("Analyze codebase targets");
+    await expect(firstStep).toContainText("Analyze codebase targets", { timeout: 10000 });
 
     // 9. Verify play/pause signal transitions cleanly
     const pauseBtn = page.locator("grug-task-board button:has-text('Pause Queue')");

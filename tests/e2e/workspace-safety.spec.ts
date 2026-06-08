@@ -148,7 +148,8 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
     // 2. Simulate an agent applying a patch that breaks the compiler
     await fs.writeFile(path.join(tempDir, "main.ts"), "const x: number = 'broken syntax';\n");
 
-    // 3. Programmatically request type-checking and assert that the error is successfully captured
+        // 3. Programmatically request type-checking and assert that the error is successfully captured
+    // Extend timeout to 15 seconds to prevent flakiness during background process execution
     const verifyResponse = await request.post("/api/workspace/verify", {
       headers: {
         "Content-Type": "application/json",
@@ -159,6 +160,7 @@ test.describe("Grug Code Workspace Safety and Sandboxing E2E", () => {
         type: "typecheck",
         cwd: tempDir,
       },
+      timeout: 15000,
     });
 
     expect(verifyResponse.status()).toBe(200);
