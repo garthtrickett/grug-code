@@ -1,5 +1,5 @@
 import { Elysia, Context, t } from "elysia";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 
 // Ensure the dist/assets directory exists so @elysiajs/static doesn't crash on startup during development
 if (!existsSync("./dist/assets")) {
@@ -311,14 +311,24 @@ export const app = new Elysia({
   });
 
 const shouldRunServers = 
-  process.env.NODE_ENV !== "test" && 
   !process.env.VITEST && 
   (!isMcpMode || isUdsMcp);
 
 if (shouldRunServers) {
-  const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
-  app.listen(port);
-  console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
+  if (isUdsMcp) {
+    const socketPath = process.env.SURGICAL_ROUTER_SOCKET_PATH || "/tmp/grug-mcp.sock";
+    try {
+      if (existsSync(socketPath)) {
+        unlinkSync(socketPath);
+      }
+    } catch {}
+    app.listen({ unix: socketPath });
+    console.info(`🦊 Elysia is running on UDS socket at ${socketPath}`);
+  } else {
+    const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
+    app.listen(port);
+    console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
+  }
 }
 
 export type App = typeof app;

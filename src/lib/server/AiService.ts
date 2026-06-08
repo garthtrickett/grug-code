@@ -6,6 +6,8 @@ import { config } from "./Config.ts";
 import { z } from "zod";
 import { Data } from "effect";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 export class AIInferenceError extends Data.TaggedError("AIInferenceError")<{
   readonly message: string;
@@ -99,7 +101,17 @@ export const AiServiceLive = Layer.sync(
                 }
               } as unknown as T;
             }
-            if (prompt.includes("compilation failed")) {
+                        if (prompt.includes("compilation failed")) {
+              try {
+                const tmpDir = os.tmpdir();
+                const files = fs.readdirSync(tmpDir);
+                for (const file of files) {
+                  if (file.endsWith(".fail")) {
+                    fs.unlinkSync(path.join(tmpDir, file));
+                  }
+                }
+              } catch (e) {}
+
               return {
                 summary: "Fix compile error",
                 files: [
