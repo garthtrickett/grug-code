@@ -37,7 +37,13 @@ export const McpClientLive = Layer.effect(
 
     let isConnected = false;
 
-    const getSseUrl = (): URL => {
+        const getSseUrl = (): URL => {
+      if (typeof window !== "undefined") {
+        const host = window.location.hostname;
+        if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+          return new URL("/api/mcp/sse", window.location.origin);
+        }
+      }
       const base = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:42069";
       if (base.startsWith("http")) {
         return new URL("/api/mcp/sse", base);
