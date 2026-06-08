@@ -1,0 +1,25 @@
+[package]
+name = "grug-code"
+version = "0.1.0"
+description = "Grug Code Desktop Companion"
+authors = ["Grug Brain <grug@daemon.local>"]
+edition = "2021"
+
+[lib]
+name = "grug_code_lib"
+path = "src/lib.rs"
+
+[dependencies]
+tauri = { version = "2.11.0", features = [] }
+tauri-plugin-shell = "2.3.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+tauri-build = { version = "2.0.3", features = [] }
+
+[profile.release]
+panic = "abort" # Strip expensive panic unwinding on release
+codegen-units = 1 # Optimize for single thread compiler passes
+lto = true # Enable link time optimization
+opt-level = "s" # Optimize for size

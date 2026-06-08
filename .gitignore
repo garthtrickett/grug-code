@@ -30,6 +30,11 @@ yarn-error.log*
 npm-debug.log*
 bun.lockb
 
+# --- Tauri Desktop Builds ---
+src-tauri/target/
+src-tauri/bin/
+src-tauri/gen/
+
 # --- Testing & Code Coverage ---
 coverage/
 test-results/

@@ -30,6 +30,8 @@ export default tseslint.config(
       "android",
       "ios",
       "web-test-runner.config.js",
+      "scripts/build-sidecar.js",
+      "src-tauri/",
     ],
   },
 

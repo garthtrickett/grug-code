@@ -7,7 +7,8 @@
     "dev": "concurrently \"bun run dev:client\" \"bun run dev:server\"",
     "dev:client": "vite",
     "dev:server": "./scripts/wait-for-postgres.sh && bun --hot run src/server/index.ts",
-    "build": "vite build",
+    "build:client": "vite build",
+    "build": "bun run build:client && bun run tauri:sidecar",
     "start": "bun run src/server/index.ts",
     "lint": "eslint . --ext .ts,.js --cache --fix",
     "check-types": "tsc --noEmit",
@@ -24,7 +25,11 @@
     "test:browser": "web-test-runner --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:all": "bun run test && (bun run test:browser || true) && bun run test:e2e"
+    "test:all": "bun run test && (bun run test:browser || true) && bun run test:e2e",
+    "tauri:sidecar": "node scripts/build-sidecar.js",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
     "@effect/vitest": "^0.24.1",
@@ -67,7 +72,8 @@
     "workbox-precaching": "^7.4.0",
     "workbox-routing": "^7.4.0",
     "workbox-strategies": "^7.4.0",
-    "workbox-window": "^7.4.0"
+    "workbox-window": "^7.4.0",
+    "@tauri-apps/cli": "^2.1.0"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.0.0",
@@ -120,6 +126,8 @@
     "tree-sitter-wasms": "^0.1.13",
     "web-push": "^3.6.7",
     "web-tree-sitter": "^0.22.4",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "@tauri-apps/api": "^2.1.0",
+    "@tauri-apps/plugin-shell": "^2.1.0"
   }
 }
