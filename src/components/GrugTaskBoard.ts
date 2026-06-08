@@ -44,9 +44,10 @@ export class GrugTaskBoard extends LitElement {
   private _checkedFiles = new Set<string>();
   private _description = "";
   private _provider: "gemini" | "openai" | "deepseek" = "gemini";
-  @state() private _discussionMode = false;
+    @state() private _discussionMode = false;
   @state() private _showConfig = false;
   @state() private _editProjId: string | null = null;
+  @state() private _submitting = false;
 
   protected override createRenderRoot() {
     return this; 
@@ -644,17 +645,19 @@ export class GrugTaskBoard extends LitElement {
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pt-2 border-t border-zinc-850">
+                <div class="flex items-center gap-2 pt-2 border-t border-zinc-850">
           <button
             type="submit"
-            class="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-bold transition-all cursor-pointer"
+            ?disabled=${this._submitting}
+            class="px-4 py-2 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold transition-all cursor-pointer"
           >
-            ${isNew ? "Register Project" : "Save Updates"}
+            ${this._submitting ? "Saving..." : isNew ? "Register Project" : "Save Updates"}
           </button>
           <button
             type="button"
+            ?disabled=${this._submitting}
             @click=${() => { this._editProjId = null; this.requestUpdate(); }}
-            class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs font-bold transition-all cursor-pointer"
+            class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300 rounded text-xs font-bold transition-all cursor-pointer"
           >
             Cancel
           </button>
@@ -663,8 +666,11 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-  private handleProjectFormSubmit = (e: Event) => {
+    private handleProjectFormSubmit = (e: Event) => {
     e.preventDefault();
+    if (this._submitting) return;
+    this._submitting = true;
+
     const form = e.target as HTMLFormElement;
     
     const getVal = (name: string): string => {
@@ -687,6 +693,7 @@ export class GrugTaskBoard extends LitElement {
     const getErrorMessage = (err: unknown) => this.getErrorMessage(err);
     
     const finalize = () => {
+      this._submitting = false;
       this._editProjId = null;
       this.requestUpdate();
     };
@@ -700,9 +707,11 @@ export class GrugTaskBoard extends LitElement {
         }
         yield* Effect.sync(finalize);
       }).pipe(
-        Effect.catchAll((err) =>
-          clientLog("error", `[GrugTaskBoard] Failed to save project registration: ${getErrorMessage(err)}`)
-        )
+        Effect.catchAll((err) => {
+          this._submitting = false;
+          this.requestUpdate();
+          return clientLog("error", `[GrugTaskBoard] Failed to save project registration: ${getErrorMessage(err)}`);
+        })
       )
     );
   };

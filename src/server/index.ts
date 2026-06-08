@@ -228,6 +228,13 @@ export const app = new Elysia({
     idleTimeout: 255, // Set Bun/Elysia idle timeout to maximum to prevent dropped connections on slow LLM calls
   }
 })
+  .onBeforeHandle(({ request, set }) => {
+    if (request.url.includes("/api/")) {
+      set.headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+      set.headers["Pragma"] = "no-cache";
+      set.headers["Expires"] = "0";
+    }
+  })
   .onError(({ code, error, request }) => {
     console.error(`❌ [Global Error] ${String(request.method)} ${String(request.url)} - ${String(code)}:`, error);
   })
