@@ -1,6 +1,6 @@
-const { mockSpawn } = vi.hoisted(() => {
-  const fn = vi.fn();
-  fn.mockImplementation(() => {
+const { mockSpawn, mockExecSync } = vi.hoisted(() => {
+  const spawnFn = vi.fn();
+  spawnFn.mockImplementation(() => {
     const mockChild = new EventEmitter();
     (mockChild as any).stdout = new EventEmitter();
     (mockChild as any).stderr = new EventEmitter();
@@ -9,18 +9,43 @@ const { mockSpawn } = vi.hoisted(() => {
     }, 10);
     return mockChild as any;
   });
-  return { mockSpawn: fn };
+
+  const execSyncFn = vi.fn().mockImplementation((command: string) => {
+    if (command === "docker info") {
+      return Buffer.from("Docker is running");
+    }
+    return Buffer.from("");
+  });
+
+  return { mockSpawn: spawnFn, mockExecSync: execSyncFn };
 });
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
+  const actualWithDefault = actual as typeof import("node:child_process") & { default?: Record<string, unknown> };
+
+  const spawnMock = (command: string, args: any, options: any) => {
+    if (command === "devcontainer" || command === "docker" || command === "tsc") {
+      return mockSpawn(command, args, options);
+    }
+    return actual.spawn(command, args, options);
+  };
+
+  const execSyncMock = (command: string, options: any) => {
+    if (command === "docker info") {
+      return mockExecSync(command, options);
+    }
+    return actual.execSync(command, options);
+  };
+
   return {
     ...actual,
-    spawn: (command: string, args: any, options: any) => {
-      if (command === "devcontainer" || command === "docker" || command === "tsc") {
-        return mockSpawn(command, args, options);
-      }
-      return actual.spawn(command, args, options);
+    spawn: spawnMock,
+    execSync: execSyncMock,
+    default: {
+      ...actualWithDefault.default,
+      spawn: spawnMock,
+      execSync: execSyncMock,
     },
   };
 });
