@@ -75,6 +75,8 @@ const mockCommitTransaction = vi.fn();
 const mockAbortTransaction = vi.fn();
 const mockApplyPatch = vi.fn();
 const mockListDirectories = vi.fn();
+const mockCreateWorktree = vi.fn();
+const mockDeleteWorktree = vi.fn();
 
 vi.mock("../WorkspaceController.ts", () => {
   return {
@@ -86,6 +88,8 @@ vi.mock("../WorkspaceController.ts", () => {
       abortTransaction: mockAbortTransaction,
       applyPatch: mockApplyPatch,
       listDirectories: mockListDirectories,
+      createWorktree: mockCreateWorktree,
+      deleteWorktree: mockDeleteWorktree,
     }),
   };
 });
@@ -213,7 +217,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     expect(parsedData.failedSearchBlock).toBe("const x = 999;");
   });
 
-  it("should successfully list subdirectories under workspace root", async () => {
+    it("should successfully list subdirectories under workspace root", async () => {
     const dirs = ["src", "src/components"];
     mockListDirectories.mockReturnValue(Effect.succeed(dirs));
 
@@ -224,6 +228,25 @@ describe("McpServer Unit and Tool Integration Tests", () => {
       content: [{ type: "text", text: JSON.stringify(dirs) }]
     });
     expect(mockListDirectories).toHaveBeenCalled();
+  });
+
+  it("should successfully trigger grug_create_worktree tool", async () => {
+    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };
+    mockCreateWorktree.mockReturnValue(Effect.succeed("/mock/cache/worktrees/task-mcp-test-task"));
+
+    const handler = getToolHandler("grug_create_worktree");
+    const response = await handler({ tx });
+
+    expect(response).toEqual({
+      content: [{ type: "text", text: "/mock/cache/worktrees/task-mcp-test-task" }]
+    });
+    expect(mockCreateWorktree).toHaveBeenCalledWith(tx);
+  });
+
+  it("should successfully trigger grug_delete_worktree tool", async () => {\n    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };\n    mockDeleteWorktree.mockReturnValue(Effect.void);\n\n    const handler = getToolHandler("grug_delete_worktree");\n    const response = await handler({ tx });\n\n    expect(response).toEqual({
+      content: [{ type: "text", text: "Worktree deleted successfully." }]
+    });
+    expect(mockDeleteWorktree).toHaveBeenCalledWith(tx);
   });
 
   it("should successfully trigger search_code_ripgrep tool", async () => {

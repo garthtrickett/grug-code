@@ -274,11 +274,68 @@ Grug applied patch success.
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-failing-command"));
 
-    const result = await Effect.runPromise(controller.runTypeCheck(tx));
+        const result = await Effect.runPromise(controller.runTypeCheck(tx));
     expect(result.success).toBe(false);
     expect(result.errorOutput).toContain("typecheck-failure-details");
 
     await db.deleteFrom("project").where("id", "=", projectId).execute();
     await Effect.runPromise(controller.abortTransaction(tx));
+  });
+
+  it("should successfully create and delete background Git worktrees cleanly", async () => {
+    const controller = makeWorkspaceController(tempDir);
+    const tx = await Effect.runPromise(controller.initTransaction("task-worktree-ops"));
+
+    const worktreePath = await Effect.runPromise(controller.createWorktree(tx));
+    expect(worktreePath).toContain(".cache/grug-code/worktrees/task-worktree-ops");
+
+    const exists = await fs.stat(worktreePath).then(() => true).catch(() => false);
+    expect(exists).toBe(true);
+
+    const initialTxtExists = await fs.stat(path.join(worktreePath, "initial.txt")).then(() => true).catch(() => false);
+    expect(initialTxtExists).toBe(true);
+
+    await Effect.runPromise(controller.deleteWorktree(tx));
+
+    const existsAfterDelete = await fs.stat(worktreePath).then(() => true).catch(() => false);
+    expect(existsAfterDelete).toBe(false);
+
+    await Effect.runPromise(controller.abortTransaction(tx));
+  });
+
+  it("should reject worktree creation if path traversal in transaction ID is detected", async () => {
+    const controller = makeWorkspaceController(tempDir);
+    const tx = {
+      id: "../../../escaped-worktree",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/escaped-worktree",
+      checkpoints: []
+    };
+
+    const program = controller.createWorktree(tx);
+    const result = await Effect.runPromise(Effect.either(program));
+
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("Security validation failed: path traversal attempt detected");
+    }
+  });
+
+  it("should reject worktree deletion if path traversal in transaction ID is detected", async () => {
+    const controller = makeWorkspaceController(tempDir);
+    const tx = {
+      id: "../../../escaped-worktree-del",
+      baseBranch: "main",
+      ephemeralBranch: "grug-task/escaped-worktree-del",
+      checkpoints: []
+    };
+
+    const program = controller.deleteWorktree(tx);
+    const result = await Effect.runPromise(Effect.either(program));
+
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.message).toContain("Security validation failed: path traversal attempt detected");
+    }
   });
 });

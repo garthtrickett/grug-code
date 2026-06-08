@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import * as os from "node:os";
 import { applyDiffs } from "./AiderPatcher";
 import type { PlanTask } from "../shared/ai-schemas.ts";
 import { db } from "../../db/client";
@@ -50,8 +51,10 @@ export interface WorkspaceController {
   ) => Effect.Effect<GitTransaction, Error>;
   readonly commitTransaction: (tx: GitTransaction) => Effect.Effect<void, Error>;
   readonly abortTransaction: (tx: GitTransaction) => Effect.Effect<void, Error>;
-  readonly listDirectories: () => Effect.Effect<readonly string[], Error>;
+    readonly listDirectories: () => Effect.Effect<readonly string[], Error>;
   readonly readTransactionState: () => Effect.Effect<{ readonly tx: GitTransaction; readonly tasks: readonly PlanTask[] } | null, Error>;
+  readonly createWorktree: (tx: GitTransaction) => Effect.Effect<string, Error>;
+  readonly deleteWorktree: (tx: GitTransaction) => Effect.Effect<void, Error>;
 }
 
 const runCommand = (args: string[], cwd?: string, env?: Record<string, string>, startupCommand?: string | null) =>
@@ -550,7 +553,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           return yield* Effect.fail(new Error(`Failed to identify current branch: ${branchCmd.stderr}`));
         }
 
-        const currentBranch = branchCmd.stdout.trim();
+                const currentBranch = branchCmd.stdout.trim();
         if (currentBranch !== state.tx.ephemeralBranch) {
           yield* Effect.logWarning(
             `[WorkspaceController] Ephemeral branch mismatch. Git is on '${currentBranch}', but metadata expects '${state.tx.ephemeralBranch}'.`
@@ -560,6 +563,69 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
         yield* Effect.logInfo(`[WorkspaceController] Active transaction verified and parsed successfully: ${state.tx.id}`);
         return state;
+      }),
+
+    createWorktree: (tx: GitTransaction) =>
+      Effect.gen(function* () {
+        yield* Effect.logInfo(`[WorkspaceController] Creating background Git worktree for task: ${tx.id}`);
+        const homeDir = os.homedir();
+        const worktreePath = path.resolve(homeDir, ".cache", "grug-code", "worktrees", `task-${tx.id}`);
+
+        const allowedPrefix = path.resolve(homeDir, ".cache", "grug-code", "worktrees");
+        if (!worktreePath.startsWith(allowedPrefix)) {
+          return yield* Effect.fail(
+            new Error(`Security validation failed: path traversal attempt detected for worktree path: "${worktreePath}"`)
+          );
+        }
+
+        yield* Effect.tryPromise({
+          try: () => fs.rm(worktreePath, { recursive: true, force: true }),
+          catch: (e) => new Error(`Failed to remove stale worktree directory: ${String(e)}`),
+        });
+
+        yield* Effect.tryPromise({
+          try: () => fs.mkdir(allowedPrefix, { recursive: true }),
+          catch: (e) => new Error(`Failed to create parent worktrees directory: ${String(e)}`),
+        });
+
+        const addCmd = yield* runCommand(["git", "worktree", "add", worktreePath, tx.ephemeralBranch], cwd);
+        if (addCmd.exitCode !== 0) {
+          return yield* Effect.fail(
+            new Error(`Failed to add git worktree at ${worktreePath}: ${addCmd.stderr}`)
+          );
+        }
+
+        yield* Effect.logInfo(`[WorkspaceController] Git worktree added successfully at: "${worktreePath}"`);
+        return worktreePath;
+      }),
+
+    deleteWorktree: (tx: GitTransaction) =>
+      Effect.gen(function* () {
+        const homeDir = os.homedir();
+        const worktreePath = path.resolve(homeDir, ".cache", "grug-code", "worktrees", `task-${tx.id}`);
+
+        yield* Effect.logInfo(`[WorkspaceController] Deleting background Git worktree at: "${worktreePath}"`);
+
+        const allowedPrefix = path.resolve(homeDir, ".cache", "grug-code", "worktrees");
+        if (!worktreePath.startsWith(allowedPrefix)) {
+          return yield* Effect.fail(
+            new Error(`Security validation failed: path traversal attempt detected for worktree deletion path: "${worktreePath}"`)
+          );
+        }
+
+        const removeCmd = yield* runCommand(["git", "worktree", "remove", "--force", worktreePath], cwd);
+        if (removeCmd.exitCode !== 0) {
+          yield* Effect.logWarning(`[WorkspaceController] git worktree remove command returned non-zero code: ${removeCmd.stderr}`);
+        }
+
+        yield* Effect.tryPromise({
+          try: () => fs.rm(worktreePath, { recursive: true, force: true }),
+          catch: (e) => new Error(`Failed to force delete worktree directory: ${String(e)}`),
+        });
+
+        yield* runCommand(["git", "worktree", "prune"], cwd);
+
+        yield* Effect.logInfo(`[WorkspaceController] Git worktree directory purged cleanly.`);
       }),
   };
 };
