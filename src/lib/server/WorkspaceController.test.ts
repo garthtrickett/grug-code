@@ -340,14 +340,12 @@ Grug applied patch success.
     }
   });
 
-  describe("Tier-Based Verification Routing", () => {
-    let spawnSpy: any;
-
+    describe("Tier-Based Verification Routing", () => {
     beforeEach(() => {
-      spawnSpy = vi.spyOn(child_process, "spawn").mockImplementation(() => {
-        const mockChild = new (require("node:events").EventEmitter)();
-        (mockChild as any).stdout = new (require("node:events").EventEmitter)();
-        (mockChild as any).stderr = new (require("node:events").EventEmitter)();
+      mockSpawn.mockImplementation((command: string, args: any, options: any) => {
+        const mockChild = new EventEmitter();
+        (mockChild as any).stdout = new EventEmitter();
+        (mockChild as any).stderr = new EventEmitter();
         setTimeout(() => {
           mockChild.emit("close", 0);
         }, 10);
@@ -356,7 +354,7 @@ Grug applied patch success.
     });
 
     afterEach(() => {
-      spawnSpy.mockRestore();
+      mockSpawn.mockReset();
     });
 
     it("should route to Tier 1 (Dev Container) when uses_devcontainer is true", async () => {
@@ -376,11 +374,11 @@ Grug applied patch success.
       const controller = makeWorkspaceController(tempDir);
       const tx = await Effect.runPromise(controller.initTransaction("task-t1"));
 
-      const result = await Effect.runPromise(controller.runTypeCheck(tx));
+            const result = await Effect.runPromise(controller.runTypeCheck(tx));
       expect(result.success).toBe(true);
 
-      expect(spawnSpy).toHaveBeenCalled();
-      const firstCall = spawnSpy.mock.calls[0];
+      expect(mockSpawn).toHaveBeenCalled();
+      const firstCall = mockSpawn.mock.calls[0];
       expect(firstCall[0]).toBe("devcontainer");
       expect(firstCall[1]).toEqual([
         "exec",
@@ -418,11 +416,11 @@ Grug applied patch success.
       const controller = makeWorkspaceController(tempDir);
       const tx = await Effect.runPromise(controller.initTransaction("task-t2"));
 
-      const result = await Effect.runPromise(controller.runTypeCheck(tx));
+            const result = await Effect.runPromise(controller.runTypeCheck(tx));
       expect(result.success).toBe(true);
 
-      expect(spawnSpy).toHaveBeenCalled();
-      const firstCall = spawnSpy.mock.calls[0];
+      expect(mockSpawn).toHaveBeenCalled();
+      const firstCall = mockSpawn.mock.calls[0];
       expect(firstCall[0]).toBe("docker");
       expect(firstCall[1]).toEqual([
         "run",
@@ -459,11 +457,11 @@ Grug applied patch success.
       const controller = makeWorkspaceController(tempDir);
       const tx = await Effect.runPromise(controller.initTransaction("task-t3"));
 
-      const result = await Effect.runPromise(controller.runTypeCheck(tx));
+            const result = await Effect.runPromise(controller.runTypeCheck(tx));
       expect(result.success).toBe(true);
 
-      expect(spawnSpy).toHaveBeenCalled();
-      const firstCall = spawnSpy.mock.calls[0];
+      expect(mockSpawn).toHaveBeenCalled();
+      const firstCall = mockSpawn.mock.calls[0];
       expect(firstCall[0]).toBe("tsc");
       expect(firstCall[1]).toEqual(["--noEmit"]);
 

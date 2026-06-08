@@ -1,6 +1,134 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { app } from "../index";
 import { getActiveToken } from "../middleware/security";
+import * as http from "node:http";
+import { ReadableStream, type ReadableStreamDefaultController } from "node:stream/web";
+
+const originalFetch = globalThis.fetch;
+
+const getUrlString = (input: RequestInfo | URL): string => {
+  if (typeof input === "string") {
+    return input;
+  }
+  if ("href" in input) {
+    return input.href;
+  }
+  return input.url;
+};
+
+const safeStringifyBody = (body: unknown): string | Buffer => {
+  if (typeof body === "string") {
+    return body;
+  }
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+  if (body && typeof body === "object" && "toString" in body) {
+    const str = (body as { toString(): string }).toString();
+    if (str !== "[object Object]") {
+      return str;
+    }
+  }
+  return "";
+};
+
+const customFetch = async (
+  input: RequestInfo | URL,
+  init?: RequestInit & { unix?: string }
+): Promise<Response> => {
+  if (init && init.unix) {
+    const urlString = getUrlString(input);
+    const url = new URL(urlString);
+    return new Promise<Response>((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath: init.unix,
+          path: url.pathname + url.search,
+          method: init.method || "GET",
+          headers: init.headers as Record<string, string>,
+        },
+        (res) => {
+          const responseHeaders = new Headers();
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value !== undefined) {
+              if (Array.isArray(value)) {
+                for (const v of value) {
+                  responseHeaders.append(key, v);
+                }
+              } else {
+                responseHeaders.append(key, value);
+              }
+            }
+          }
+
+          const contentType = res.headers["content-type"] || "";
+          const isEventStream = contentType.includes("text/event-stream");
+
+          if (isEventStream) {
+            const bodyStream = new ReadableStream<Uint8Array>({
+              start(controller: ReadableStreamDefaultController) {
+                res.on("data", (chunk: Uint8Array) => {
+                  controller.enqueue(new Uint8Array(chunk));
+                });
+                res.on("end", () => {
+                  controller.close();
+                });
+                res.on("error", (err) => {
+                  controller.error(err);
+                });
+              },
+              cancel() {
+                res.destroy();
+              },
+            });
+
+            const response = new Response(bodyStream as unknown as BodyInit, {
+              status: res.statusCode,
+              statusText: res.statusMessage,
+              headers: responseHeaders,
+            });
+
+            resolve(response);
+            return;
+          }
+
+          const chunks: Uint8Array[] = [];
+          res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
+          res.on("end", () => {
+            const body = Buffer.concat(chunks);
+            const response = new Response(body, {
+              status: res.statusCode,
+              statusText: res.statusMessage,
+              headers: responseHeaders,
+            });
+
+            Object.defineProperty(response, "body", {
+              get() {
+                return new ReadableStream<Uint8Array>({
+                  start(controller: ReadableStreamDefaultController) {
+                    controller.enqueue(new Uint8Array(body));
+                    controller.close();
+                  },
+                });
+              },
+              configurable: true,
+            });
+
+            resolve(response);
+          });
+        }
+      );
+      req.on("error", (err) => {
+        reject(err);
+      });
+      if (init.body) {
+        req.write(safeStringifyBody(init.body));
+      }
+      req.end();
+    });
+  }
+  return originalFetch(input, init);
+};
 import * as fs from "node:fs/promises";
 import fsSync from "node:fs";
 import * as path from "node:path";
@@ -31,6 +159,14 @@ vi.mock("../../lib/server/AiService.ts", () => {
 describe("Elysia Companion Server - Workspace endpoints", () => {
   let tempDir: string;
   const originalCwd = process.cwd();
+
+  beforeAll(() => {
+    globalThis.fetch = Object.assign(customFetch, originalFetch);
+  });
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+  });
 
   beforeEach(async () => {
     tempDir = path.join(originalCwd, `.grug-api-test-${crypto.randomUUID()}`);
