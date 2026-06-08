@@ -410,10 +410,10 @@ Grug applied patch success.
         })
         .execute();
 
-      const execSyncSpy = vi.spyOn(require("node:child_process"), "execSync").mockImplementation((cmd: string) => {
+            const execSyncSpy = vi.spyOn(require("node:child_process"), "execSync").mockImplementation(((cmd: unknown) => {
         if (cmd === "docker info") return Buffer.from("Docker is running");
         return Buffer.from("");
-      });
+      }) as any);
 
       const controller = makeWorkspaceController(tempDir);
       const tx = await Effect.runPromise(controller.initTransaction("task-t2"));

@@ -107,10 +107,10 @@ export const ProjectStructureMapperLive = Layer.succeed(
         const path1 = path.join(rootDir, ".devcontainer.json");
         const path2 = path.join(rootDir, ".devcontainer", "devcontainer.json");
 
-        const exists = (filePath: string) =>
+                const exists = (filePath: string) =>
           Effect.tryPromise({
             try: () => fs.stat(filePath).then(() => true).catch(() => false),
-            catch: () => false,
+            catch: (e) => new Error(String(e)),
           });
 
         const hasJson = yield* exists(path1);

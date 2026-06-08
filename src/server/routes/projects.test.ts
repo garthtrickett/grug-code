@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { app } from "../index";
 import { getActiveToken } from "../middleware/security";
 import { db } from "../../db/client";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 describe("Elysia Companion Server - Projects Endpoint CRUD E2E", () => {
   const token = getActiveToken();

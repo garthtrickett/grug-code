@@ -45,10 +45,11 @@ describe("Interactive CLI Prompts Test Suite", () => {
   it("should fall back to local execution cleanly if daemon is offline", async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error("Daemon unreachable")) as any;
 
-    const mockMapper = Layer.succeed(
+        const mockMapper = Layer.succeed(
       ProjectStructureMapper,
       ProjectStructureMapper.of({
-        mapProject: () => Effect.succeed("[\"src/main.ts\"]")
+        mapProject: () => Effect.succeed("[\"src/main.ts\"]"),
+        detectDevContainer: () => Effect.succeed(false)
       })
     );
 
@@ -218,10 +219,11 @@ describe("Interactive CLI Prompts Test Suite", () => {
 
     global.fetch = fetchSpy as any;
 
-    const mockMapper = Layer.succeed(
+        const mockMapper = Layer.succeed(
       ProjectStructureMapper,
       ProjectStructureMapper.of({
         mapProject: vi.fn(),
+        detectDevContainer: vi.fn()
       })
     );
 

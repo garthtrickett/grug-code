@@ -204,24 +204,30 @@ const wrapVerificationCommand = async (
 export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
   const txFile = path.resolve(cwd || process.cwd(), ".grug-active-transaction.json");
 
-    const getProject = ()
-    =>
+      const getProject = () =>
     Effect.gen(function* () {
       if (!cwd) return null;
       let absoluteCwd = path.resolve(cwd);
-      try {
+      
+      const checkWorktree = Effect.gen(function* () {
         const gitFilePath = path.join(absoluteCwd, ".git");
-        const gitFileStat = await fs.stat(gitFilePath);
+        const gitFileStat = yield* Effect.tryPromise({
+          try: () => fs.stat(gitFilePath),
+          catch: (e) => new Error(String(e))
+        });
         if (gitFileStat.isFile()) {
-          const gitFileContent = await fs.readFile(gitFilePath, "utf-8");
+          const gitFileContent = yield* Effect.tryPromise({
+            try: () => fs.readFile(gitFilePath, "utf-8"),
+            catch: (e) => new Error(String(e))
+          });
           const match = /gitdir:\s+(.*)\/\.git\/worktrees\//.exec(gitFileContent);
           if (match && match[1]) {
             absoluteCwd = path.resolve(match[1]);
           }
         }
-      } catch {
-        // ignore if not a worktree or .git file is missing
-      }
+      }).pipe(Effect.catchAll(() => Effect.void));
+
+      yield* checkWorktree;
 
       const project = yield* Effect.tryPromise({
         try: () => db.selectFrom("project").selectAll().where("root_path", "=", absoluteCwd).executeTakeFirst(),
