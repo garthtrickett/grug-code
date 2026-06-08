@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Effect, ManagedRuntime, Layer } from "effect";
+import { Elysia } from "elysia";
+import { cors } from "@elysiajs/cors";
+import { config } from "./lib/Config.ts";
 import { z } from "zod";
 import { ProjectStructureMapper, ProjectStructureMapperLive } from "./features/ProjectStructureMapper.ts";
 import { ResearchLoop, ResearchLoopLive } from "./features/ResearchLoop.ts";
@@ -96,11 +99,27 @@ server.tool(
   }
 );
 
+export const createDaemonApp = () => {
+  return new Elysia()
+    .use(cors())
+    .get("/api/health", () => ({ status: "ok", service: "grug-cli-daemon" }))
+    .get("/api/preferences", () => ({ dailyReviewLimit: 20, dailyNewRuleLimit: 3, enforceMasteryGates: true }))
+    .get("/api/auth/me", () => ({ user: { id: "daemon-user", email: "grug@daemon.local", permissions: ["platform:manage"] } }));
+};
+
 if (import.meta.main) {
-  const transport = new StdioServerTransport();
-  server.connect(transport).then(() => {
-    console.error("[Daemon] Stdio server connected successfully.");
-  }).catch((err) => {
-    console.error("[Daemon] Stdio server failed:", err);
-  });
+  const useStdio = process.argv.includes("--stdio") || process.env.DAEMON_STDIO === "true";
+  if (useStdio) {
+    const transport = new StdioServerTransport();
+    server.connect(transport).then(() => {
+      console.error("[Daemon] Stdio server connected successfully.");
+    }).catch((err) => {
+      console.error("[Daemon] Stdio server failed:", err);
+    });
+  } else {
+    const port = process.env.DAEMON_PORT ? parseInt(process.env.DAEMON_PORT, 10) : config.network.daemonPort;
+    const app = createDaemonApp();
+    app.listen(port);
+    console.error(`[Daemon] Elysia server is running at http://localhost:${port}`);
+  }
 }
