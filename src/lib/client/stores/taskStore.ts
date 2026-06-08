@@ -149,7 +149,7 @@ export const taskStore = {
       const firstContent = res.content[0];
       const text = firstContent?.text;
       
-      let state: ReconciledState | null = null;
+            let state: ReconciledState | null = null;
       if (text) {
         try {
           state = (JSON.parse(text) as unknown) as ReconciledState;
