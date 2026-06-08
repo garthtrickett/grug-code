@@ -314,7 +314,7 @@ export const app = new Elysia({
       "http://localhost",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Life-IO-Subdomain", "Cache-Control", "Pragma", "Expires", "X-Grug-Token"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Life-IO-Subdomain", "Cache-Control", "Pragma", "Expires", "X-Grug-Token", "mcp-protocol-version"],
     credentials: true,
   }))
   .use(effectPlugin)

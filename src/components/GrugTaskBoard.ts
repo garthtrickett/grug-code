@@ -303,11 +303,15 @@ export class GrugTaskBoard extends LitElement {
         },
       });
 
-      this._selectService = service;
+            this._selectService = service;
       service.start();
 
-      service.subscribe(() => {
-        this.requestUpdate();
+      let lastState = service.state.value;
+      service.subscribe((state) => {
+        if (state.value !== lastState) {
+          lastState = state.value;
+          this.requestUpdate();
+        }
       });
     } else {
       const collection = select.collection({
@@ -411,11 +415,15 @@ export class GrugTaskBoard extends LitElement {
         },
       });
 
-      this._projectSelectService = service;
+            this._projectSelectService = service;
       service.start();
 
-      service.subscribe(() => {
-        this.requestUpdate();
+      let lastState = service.state.value;
+      service.subscribe((state) => {
+        if (state.value !== lastState) {
+          lastState = state.value;
+          this.requestUpdate();
+        }
       });
     } else {
       const collection = select.collection({
