@@ -13,10 +13,15 @@ test("Grug Code Tauri Mock IPC Verification", async ({ page }) => {
 
   // Execute a mock Tauri invoke call directly within the window context of the loaded page
   const result = await page.evaluate(async () => {
-    if (typeof (window as any).__TAURI__ === "undefined") {
+    const w = window as unknown as {
+      __TAURI__?: {
+        invoke: (cmd: string) => Promise<string>;
+      };
+    };
+    if (!w.__TAURI__) {
       return "undefined";
     }
-    return await (window as any).__TAURI__.invoke("plugin:dialog|open");
+    return await w.__TAURI__.invoke("plugin:dialog|open");
   });
 
   // Verify that the mocked response is returned correctly without crashing the frontend run

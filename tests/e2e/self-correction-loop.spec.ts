@@ -147,13 +147,30 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
       },
     });
 
-        expect(executeResponse.status()).toBe(200);
-    const asyncRes = (await executeResponse.json()) as {
-      status: string;
-      worktreePath: string;
-      ephemeralBranch: string;
-      tx: any;
-    };
+            interface ExecutionStepResponse {
+      readonly status: string;
+      readonly worktreePath: string;
+      readonly ephemeralBranch: string;
+      readonly tx: {
+        readonly id: string;
+        readonly baseBranch: string;
+        readonly ephemeralBranch: string;
+        readonly checkpoints: readonly string[];
+      };
+    }
+
+    interface WorkspaceStatusResponse {
+      readonly tx: {
+        readonly id: string;
+        readonly baseBranch: string;
+        readonly ephemeralBranch: string;
+        readonly checkpoints: readonly string[];
+      };
+      readonly tasks: readonly unknown[];
+    }
+
+    expect(executeResponse.status()).toBe(200);
+    const asyncRes = (await executeResponse.json()) as ExecutionStepResponse;
     expect(asyncRes.status).toBe("running");
 
     const worktreePath = asyncRes.worktreePath;
@@ -175,8 +192,9 @@ test.describe("Grug Code Self-Correction Loop E2E", () => {
       }
     });
     expect(statusResponse.status()).toBe(200);
-    const statusData = await statusResponse.json() as { tx: any; tasks: any[] };
+    const statusData = (await statusResponse.json()) as WorkspaceStatusResponse; 
     expect(statusData).not.toBeNull();
+    expect(statusData.tx).toBeDefined();
     expect(statusData.tx.checkpoints.length).toBe(1);
 
     // Verify final file is corrected back to valid type and passing value (42)

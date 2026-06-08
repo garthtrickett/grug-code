@@ -218,7 +218,7 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       body: JSON.stringify(initializeRequest),
     });
     expect(initPostResponse.status).toBe(200);
-    const initResult = await initPostResponse.json() as any;
+    const initResult = await initPostResponse.json();
     expect(initResult.jsonrpc).toBe("2.0");
 
     // 3. Call list_directories tool
@@ -242,7 +242,7 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       body: JSON.stringify(callToolsRequest),
     });
     expect(callPostResponse.status).toBe(200);
-    const toolResult = await callPostResponse.json() as any; 
+    const toolResult = await callPostResponse.json(); 
     expect(toolResult.jsonrpc).toBe("2.0");
     expect(toolResult.result?.content?.[0]?.text).toBeDefined();
 
@@ -303,7 +303,7 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     });
 
     expect(toolsResponse.status).toBe(200);
-    const toolsResult = await toolsResponse.json() as any;
+    const toolsResult = await toolsResponse.json();
     expect(toolsResult.jsonrpc).toBe("2.0");
 
     const tools = toolsResult.result?.tools || [];
@@ -313,4 +313,3 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     await reader.cancel();
   });
   });
-});

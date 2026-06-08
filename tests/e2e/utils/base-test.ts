@@ -15,27 +15,42 @@ export const test = base.extend({
   page: async ({ page }, use) => {
     attachLogs(page, "Default");
     await page.addInitScript(() => {
-      (window as any).__TAURI__ = {
-        invoke: async (cmd: string, args?: any) => {
-          console.log(`[Tauri Mock IPC] Invoke: ${cmd}`, args);
-          if (cmd === "plugin:shell|spawn" || cmd === "plugin:shell|execute") {
-            return { pid: 9999, stdout: "mock stdout", stderr: "" };
-          }
-          if (cmd === "plugin:dialog|open") {
-            return "/mock/dialog/path";
-          }
-          if (cmd === "plugin:path|app_config_dir") {
-            return "/mock/app_config_dir";
-          }
-          return null;
-        }
+      const w = window as unknown as {
+        __TAURI__?: {
+          invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+        };
+        __TAURI_INTERNALS__?: {
+          invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+          transformCallback: (callback: unknown) => unknown;
+          metadata: {
+            rawResult: (result: unknown) => unknown;
+          };
+        };
       };
 
-      (window as any).__TAURI_INTERNALS__ = {
-        invoke: (window as any).__TAURI__.invoke,
-        transformCallback: (callback: any) => callback,
+      const mockInvoke = async (cmd: string, args?: unknown): Promise<unknown> => {
+        console.log(`[Tauri Mock IPC] Invoke: ${cmd}`, args);
+        if (cmd === "plugin:shell|spawn" || cmd === "plugin:shell|execute") {
+          return { pid: 9999, stdout: "mock stdout", stderr: "" };
+        }
+        if (cmd === "plugin:dialog|open") {
+          return "/mock/dialog/path";
+        }
+        if (cmd === "plugin:path|app_config_dir") {
+          return "/mock/app_config_dir";
+        }
+        return null;
+      };
+
+      w.__TAURI__ = {
+        invoke: mockInvoke
+      };
+
+      w.__TAURI_INTERNALS__ = {
+        invoke: mockInvoke,
+        transformCallback: (callback) => callback,
         metadata: {
-          rawResult: (result: any) => result,
+          rawResult: (result) => result,
         }
       };
     });
@@ -48,27 +63,42 @@ export const test = base.extend({
       context.on("page", async (page) => {
         attachLogs(page, "Manual");
         await page.addInitScript(() => {
-          (window as any).__TAURI__ = {
-            invoke: async (cmd: string, args?: any) => {
-              console.log(`[Tauri Mock IPC] Invoke: ${cmd}`, args);
-              if (cmd === "plugin:shell|spawn" || cmd === "plugin:shell|execute") {
-                return { pid: 9999, stdout: "mock stdout", stderr: "" };
-              }
-              if (cmd === "plugin:dialog|open") {
-                return "/mock/dialog/path";
-              }
-              if (cmd === "plugin:path|app_config_dir") {
-                return "/mock/app_config_dir";
-              }
-              return null;
-            }
+          const w = window as unknown as {
+            __TAURI__?: {
+              invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+            };
+            __TAURI_INTERNALS__?: {
+              invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+              transformCallback: (callback: unknown) => unknown;
+              metadata: {
+                rawResult: (result: unknown) => unknown;
+              };
+            };
           };
 
-          (window as any).__TAURI_INTERNALS__ = {
-            invoke: (window as any).__TAURI__.invoke,
-            transformCallback: (callback: any) => callback,
+          const mockInvoke = async (cmd: string, args?: unknown): Promise<unknown> => {
+            console.log(`[Tauri Mock IPC] Invoke: ${cmd}`, args);
+            if (cmd === "plugin:shell|spawn" || cmd === "plugin:shell|execute") {
+              return { pid: 9999, stdout: "mock stdout", stderr: "" };
+            }
+            if (cmd === "plugin:dialog|open") {
+              return "/mock/dialog/path";
+            }
+            if (cmd === "plugin:path|app_config_dir") {
+              return "/mock/app_config_dir";
+            }
+            return null;
+          };
+
+          w.__TAURI__ = {
+            invoke: mockInvoke
+          };
+
+          w.__TAURI_INTERNALS__ = {
+            invoke: mockInvoke,
+            transformCallback: (callback) => callback,
             metadata: {
-              rawResult: (result: any) => result,
+              rawResult: (result) => result,
             }
           };
         });

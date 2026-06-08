@@ -110,7 +110,7 @@ export const AiServiceLive = Layer.sync(
                     fs.unlinkSync(path.join(tmpDir, file));
                   }
                 }
-              } catch (e) {}
+              } catch  {}
 
               return {
                 summary: "Fix compile error",
