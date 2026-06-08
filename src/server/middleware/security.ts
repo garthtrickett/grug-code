@@ -80,6 +80,11 @@ const isLoopbackOrigin = (origin: string | null): boolean => {
 
 export const securityMiddleware = (app: Elysia) =>
   app.onBeforeHandle(({ request, set }) => {
+    const method = request.method;
+    if (method === "OPTIONS") {
+      return;
+    }
+
     let host = request.headers.get("host");
     if (!host && request.url) {
       try {
@@ -89,7 +94,6 @@ export const securityMiddleware = (app: Elysia) =>
       }
     }
     const origin = request.headers.get("origin");
-    const method = request.method;
 
     const isStateChanging = ["POST", "PUT", "DELETE", "PATCH"].includes(method);
 
