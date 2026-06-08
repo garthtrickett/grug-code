@@ -313,14 +313,17 @@ export class GrugTaskBoard extends LitElement {
           this.requestUpdate();
         }
       });
-    } else {
+        } else {
       const collection = select.collection({
         items: itemsWithRoot,
         itemToString: (item) => item || "Whole Project Root",
         itemToValue: (item) => item,
       });
       if (this._selectService && this._selectService.updateProps) {
-        this._selectService.updateProps({ collection });
+        this._selectService.updateProps({
+          collection,
+          value: selectedScopeSignal.value ? [selectedScopeSignal.value] : [],
+        });
       }
     }
 
@@ -425,14 +428,17 @@ export class GrugTaskBoard extends LitElement {
           this.requestUpdate();
         }
       });
-    } else {
+        } else {
       const collection = select.collection({
         items: [...projects],
         itemToString: (item) => item ? `${item.name} (${item.root_path})` : "Select Project",
         itemToValue: (item) => item ? item.id : "",
       });
       if (this._projectSelectService && this._projectSelectService.updateProps) {
-        this._projectSelectService.updateProps({ collection });
+        this._projectSelectService.updateProps({
+          collection,
+          value: activeProjectSignal.value ? [activeProjectSignal.value.id] : [],
+        });
       }
     }
 

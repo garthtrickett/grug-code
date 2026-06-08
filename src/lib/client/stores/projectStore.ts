@@ -190,9 +190,18 @@ export const projectStore = {
         });
 
         yield* runSetup.pipe(Effect.catchAll(() => Effect.void));
-      } else {
+            } else {
         localStorage.removeItem("grug-cwd");
         yield* clientLog("info", "[projectStore] Project selection cleared.");
+        
+        const clearAll = Effect.gen(function* () {
+          const { directoriesSignal } = yield* Effect.promise(() => import("./directoryStore"));
+          directoriesSignal.value = [];
+          const { taskStore } = yield* Effect.promise(() => import("./taskStore"));
+          yield* taskStore.clear();
+        }).pipe(Effect.catchAll(() => Effect.void));
+        
+        yield* clearAll;
       }
     }),
 
