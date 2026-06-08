@@ -1,3 +1,5 @@
+// File: src/lib/server/WorkspaceController.ts
+// ==============================================================================
 import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
@@ -51,7 +53,7 @@ export interface WorkspaceController {
   ) => Effect.Effect<GitTransaction, Error>;
   readonly commitTransaction: (tx: GitTransaction) => Effect.Effect<void, Error>;
   readonly abortTransaction: (tx: GitTransaction) => Effect.Effect<void, Error>;
-    readonly listDirectories: () => Effect.Effect<readonly string[], Error>;
+  readonly listDirectories: () => Effect.Effect<readonly string[], Error>;
   readonly readTransactionState: () => Effect.Effect<{ readonly tx: GitTransaction; readonly tasks: readonly PlanTask[] } | null, Error>;
   readonly createWorktree: (tx: GitTransaction) => Effect.Effect<string, Error>;
   readonly deleteWorktree: (tx: GitTransaction) => Effect.Effect<void, Error>;
@@ -263,7 +265,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),
 
-        runTypeCheck: (_tx: GitTransaction) =>
+    runTypeCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_start" }));
@@ -291,7 +293,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-        runLintCheck: (_tx: GitTransaction) =>
+    runLintCheck: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_start" }));
@@ -321,7 +323,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-        runTestSuite: (_tx: GitTransaction) =>
+    runTestSuite: (_tx: GitTransaction) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_start" }));
@@ -371,6 +373,9 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         const commitHash = revCmd.stdout.trim();
         yield* Effect.logInfo(`[WorkspaceController] Checkpoint created successfully. Hash: ${commitHash}`);
 
+        // Update the branch pointer to the new commit hash, as we might be on a detached HEAD (inside a background worktree)
+        yield* runCommand(["git", "update-ref", `refs/heads/${tx.ephemeralBranch}`, commitHash], cwd);
+
         const updatedTx = {
           ...tx,
           checkpoints: [...tx.checkpoints, commitHash],
@@ -400,6 +405,9 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         if (cleanCmd.exitCode !== 0) {
           return yield* Effect.fail(new Error(`Failed to clean untracked: ${cleanCmd.stderr}`));
         }
+
+        // Also update the branch pointer to sync with the rollback
+        yield* runCommand(["git", "update-ref", `refs/heads/${tx.ephemeralBranch}`, commitHash], cwd);
 
         const targetIdx = tx.checkpoints.indexOf(commitHash);
         const remainingCheckpoints = tx.checkpoints.slice(0, targetIdx + 1);
@@ -553,7 +561,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           return yield* Effect.fail(new Error(`Failed to identify current branch: ${branchCmd.stderr}`));
         }
 
-                const currentBranch = branchCmd.stdout.trim();
+        const currentBranch = branchCmd.stdout.trim();
         if (currentBranch !== state.tx.ephemeralBranch) {
           yield* Effect.logWarning(
             `[WorkspaceController] Ephemeral branch mismatch. Git is on '${currentBranch}', but metadata expects '${state.tx.ephemeralBranch}'.`
@@ -588,7 +596,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           catch: (e) => new Error(`Failed to create parent worktrees directory: ${String(e)}`),
         });
 
-        const addCmd = yield* runCommand(["git", "worktree", "add", worktreePath, tx.ephemeralBranch], cwd);
+        const addCmd = yield* runCommand(["git", "worktree", "add", "--detach", worktreePath, tx.ephemeralBranch], cwd);
         if (addCmd.exitCode !== 0) {
           return yield* Effect.fail(
             new Error(`Failed to add git worktree at ${worktreePath}: ${addCmd.stderr}`)
@@ -624,6 +632,9 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         });
 
         yield* runCommand(["git", "worktree", "prune"], cwd);
+
+        // Reset the main repository's working tree to the updated branch HEAD!
+        yield* runCommand(["git", "reset", "--hard", `refs/heads/${tx.ephemeralBranch}`], cwd);
 
         yield* Effect.logInfo(`[WorkspaceController] Git worktree directory purged cleanly.`);
       }),

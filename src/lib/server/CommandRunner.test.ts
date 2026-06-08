@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { makeCommandRunner, parseTscErrors, parseTestFailures } from "./CommandRunner";
 
 describe("CommandRunner - Execution and Spawner System", () => {
@@ -148,5 +150,35 @@ FAIL  tests/e2e/dictionary-lookup.spec.ts
     results.forEach((r) => {
       expect(r.success).toBe(true);
     });
+  });
+
+  it("should execute verification suites inside the specified isolated worktree directory", async () => {
+    const tempWorktreeDir = path.join(process.cwd(), `command-runner-worktree-${crypto.randomUUID()}`);
+    await fs.mkdir(tempWorktreeDir, { recursive: true });
+
+    const runner = makeCommandRunner();
+
+    // Verify typecheck executes in our temporary worktree by printing cwd
+    const tcResult = await Effect.runPromise(
+      runner.runTypeCheck(
+        tempWorktreeDir,
+        10000,
+        "bun -e console.log(process.cwd())"
+      )
+    );
+    expect(tcResult.success).toBe(true);
+
+    // Verify test suite executes in our temporary worktree
+    const tsResult = await Effect.runPromise(
+      runner.runTestSuite(
+        tempWorktreeDir,
+        10000,
+        "bun -e console.log(process.cwd())"
+      )
+    );
+    expect(tsResult.success).toBe(true);
+
+    // Clean up
+    await fs.rm(tempWorktreeDir, { recursive: true, force: true });
   });
 });

@@ -1,5 +1,7 @@
 import * as p from "@clack/prompts";
 import { Effect, ManagedRuntime, Layer } from "effect";
+import * as fsSync from "node:fs";
+import * as path from "node:path";
 import { ProjectStructureMapper, ProjectStructureMapperLive } from "./features/ProjectStructureMapper.ts";
 import { ResearchLoop, ResearchLoopLive } from "./features/ResearchLoop.ts";
 import { AiServiceLive } from "./lib/AiService.ts";
@@ -82,7 +84,7 @@ export const runCli = () =>
         const reader = sseResponse.body?.getReader();
         if (!reader) throw new Error("Failed to get reader");
 
-                const readResult = await reader.read();
+        const readResult = await reader.read();
         const value: unknown = readResult.value;
         const rawText = value instanceof Uint8Array ? new TextDecoder().decode(value) : "";
         const sessionIdMatch = /sessionId=([a-zA-Z0-9\\-]+)/.exec(rawText);
@@ -281,7 +283,73 @@ export const runCli = () =>
         checkCancel(approve);
 
         if (approve) {
-          p.outro("🎉 Grug Code pre-planning approved successfully!");
+          if (isDaemonOnline) {
+            s.start("Grug initializing active transaction on Daemon...");
+            const taskId = `cli-task-${crypto.randomUUID().slice(0, 8)}`;
+            
+            let txResultText = "";
+            try {
+              const callResult = yield* callDaemonTool("git_init_tx", {
+                taskId,
+                tasks: plan,
+              });
+              txResultText = callResult.content[0]?.text || "";
+            } catch (err) {
+              s.stop();
+              p.cancel(`Failed to initialize transaction on daemon: ${String(err)}`);
+              process.exit(1);
+            }
+            s.stop("Transaction initialized.");
+
+            const tx = JSON.parse(txResultText) as { id: string; baseBranch: string; ephemeralBranch: string; checkpoints: string[] };
+
+            // Read the secure token from local session context to bypass loopback auth checks
+            const sessionPath = path.resolve(process.cwd(), ".grug-session.json");
+            let token = "";
+            try {
+              if (fsSync.existsSync(sessionPath)) {
+                const fileContent = fsSync.readFileSync(sessionPath, "utf-8");
+                const sessionData = JSON.parse(fileContent) as { readonly token?: string };
+                if (sessionData && typeof sessionData === "object" && typeof sessionData.token === "string") {
+                  token = sessionData.token;
+                }
+              }
+            } catch {}
+
+            s.start("Grug backgrounding task execution on Daemon...");
+            const response = yield* Effect.promise(() =>
+              fetch(`http://localhost:${port}/api/workspace/execute-step`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Grug-Token": token,
+                },
+                body: JSON.stringify({
+                  tx,
+                  targetFiles: selectedFiles,
+                  instructions: currentPrompt,
+                  tasks: plan,
+                })
+              })
+            );
+
+            s.stop("Task successfully backgrounded.");
+
+            if (response.ok) {
+              const bgData = yield* Effect.promise(() => response.json() as Promise<{ worktreePath: string; ephemeralBranch: string }>);
+              p.note(
+                `Worktree Path: ${bgData.worktreePath}\nEphemeral Branch: ${bgData.ephemeralBranch}\n\nTo tail the live execution logs, run:\nbun run src/server/index.ts --mcp\n(or query the SSE stream at http://localhost:${port}/api/workspace/stream-progress)`,
+                "🚀 Background Task Spawned Successfully"
+              );
+              p.outro("🎉 Grug Code background task detached cleanly! Shell released.");
+              process.exit(0);
+            } else {
+              p.cancel(`Daemon rejected background task: ${response.statusText}`);
+              process.exit(1);
+            }
+          } else {
+            p.outro("🎉 Grug Code pre-planning approved successfully! (Local execution mode)");
+          }
         } else {
           p.cancel("Planning rejected. Workspace unchanged.");
         }

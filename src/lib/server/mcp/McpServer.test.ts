@@ -117,7 +117,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     return handler;
   };
 
-    it("should initialize with correct metadata config", () => {
+  it("should initialize with correct metadata config", () => {
     expect(passedServerInfo.value).toEqual({
       name: "grug-code-mcp",
       version: "0.1.0"
@@ -217,7 +217,7 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     expect(parsedData.failedSearchBlock).toBe("const x = 999;");
   });
 
-    it("should successfully list subdirectories under workspace root", async () => {
+  it("should successfully list subdirectories under workspace root", async () => {
     const dirs = ["src", "src/components"];
     mockListDirectories.mockReturnValue(Effect.succeed(dirs));
 
@@ -243,7 +243,14 @@ describe("McpServer Unit and Tool Integration Tests", () => {
     expect(mockCreateWorktree).toHaveBeenCalledWith(tx);
   });
 
-  it("should successfully trigger grug_delete_worktree tool", async () => {\n    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };\n    mockDeleteWorktree.mockReturnValue(Effect.void);\n\n    const handler = getToolHandler("grug_delete_worktree");\n    const response = await handler({ tx });\n\n    expect(response).toEqual({
+  it("should successfully trigger grug_delete_worktree tool", async () => {
+    const tx = { id: "mcp-test-task", baseBranch: "main", ephemeralBranch: "grug-task/mcp-test-task", checkpoints: [] };
+    mockDeleteWorktree.mockReturnValue(Effect.void);
+
+    const handler = getToolHandler("grug_delete_worktree");
+    const response = await handler({ tx });
+
+    expect(response).toEqual({
       content: [{ type: "text", text: "Worktree deleted successfully." }]
     });
     expect(mockDeleteWorktree).toHaveBeenCalledWith(tx);

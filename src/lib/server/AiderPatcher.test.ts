@@ -1,3 +1,5 @@
+// File: src/lib/server/AiderPatcher.test.ts
+// ==============================================================================
 import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
 import * as fs from "node:fs/promises";
@@ -275,5 +277,35 @@ describe("AiderPatcher - Text Matching Waterfall Tests", () => {
     expect(updatedContent).toContain("return amount * 10;");
 
     await fs.unlink(tempFile);
+  });
+
+  it("should apply patches relative to an isolated worktree directory when cwd is passed", async () => {
+    const tempWorktreeDir = path.join(process.cwd(), `aider-worktree-test-${crypto.randomUUID()}`);
+    await fs.mkdir(tempWorktreeDir, { recursive: true });
+    await fs.mkdir(path.join(tempWorktreeDir, "src"), { recursive: true });
+
+    const relativePath = "src/main.ts";
+    const absolutePath = path.join(tempWorktreeDir, relativePath);
+    await fs.writeFile(absolutePath, "export const x = 1;\n", "utf-8");
+
+    const patchJson = JSON.stringify({
+      summary: "Apply worktree patch",
+      files: [
+        {
+          file_path: relativePath,
+          code_diff: "\n<<<<<<< SEARCH\nexport const x = 1;\n=======\nexport const x = 2;\n>>>>>>> REPLACE\n"
+        }
+      ]
+    });
+
+    const runner = applyDiffs(patchJson, tempWorktreeDir).pipe(Effect.provide(TreeSitterParserLive));
+    const success = await Effect.runPromise(runner);
+    expect(success).toBe(true);
+
+    const updatedContent = await fs.readFile(absolutePath, "utf-8");
+    expect(updatedContent).toBe("export const x = 2;\n");
+
+    // Clean up
+    await fs.rm(tempWorktreeDir, { recursive: true, force: true });
   });
 });

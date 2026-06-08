@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import * as os from "node:os";
 import { SelfCorrectionError } from "../auth/Errors.ts";
 import { AiService } from "../../lib/server/AiService.ts";
 import { makeWorkspaceController } from "../../lib/server/WorkspaceController.ts";
@@ -42,11 +43,34 @@ export const CorrectionLoopLive = Layer.effect(
     return {
       runStep: ({ tx, targetFiles, instructions, cwd, tasks, currentTaskId }) =>
         Effect.gen(function* () {
-
           yield* Effect.logInfo(`[CorrectionLoop] Starting Stage 2 Self-Correction Loop for transaction: ${tx.id}`);
 
           const controller = makeWorkspaceController(cwd);
           const provider = tx.provider;
+
+          // Resolve or spin up the background Git Worktree to isolate modifications
+          const homeDir = os.homedir();
+          const worktreePath = path.resolve(homeDir, ".cache", "grug-code", "worktrees", `task-${tx.id}`);
+          const worktreeExists = yield* Effect.tryPromise({
+            try: () => fs.stat(worktreePath).then(() => true).catch(() => false),
+            catch: (e) => new SelfCorrectionError({ message: `Failed to check worktree existence: ${String(e)}` }),
+          });
+
+          let activeCwd = cwd;
+          let worktreeController = controller;
+
+          if (worktreeExists) {
+            activeCwd = worktreePath;
+            worktreeController = makeWorkspaceController(worktreePath);
+            yield* Effect.logInfo(`[CorrectionLoop] Using existing background Git worktree at: "${worktreePath}"`);
+          } else {
+            yield* Effect.logInfo(`[CorrectionLoop] Creating new background Git worktree for transaction: ${tx.id}`);
+            const spawnedPath = yield* controller.createWorktree(tx).pipe(
+              Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to create Git worktree: ${err.message}`, cause: err }))
+            );
+            activeCwd = spawnedPath;
+            worktreeController = makeWorkspaceController(spawnedPath);
+          }
 
           let patchToApply = instructions;
 
@@ -64,7 +88,7 @@ export const CorrectionLoopLive = Layer.effect(
             
             let targetFilesContext = "";
             for (const file of targetFiles) {
-              const filePath = cwd ? path.resolve(cwd, file) : path.resolve(file);
+              const filePath = activeCwd ? path.resolve(activeCwd, file) : path.resolve(file);
               const exists = yield* Effect.tryPromise({
                 try: () => fs.stat(filePath).then(() => true).catch(() => false),
                 catch: (e) => new SelfCorrectionError({ message: `Failed to check file stat: ${String(e)}` }),
@@ -100,9 +124,9 @@ export const CorrectionLoopLive = Layer.effect(
             patchToApply = JSON.stringify(initialPatch);
           }
 
-          // Phase 1: Programmatically apply the initial patch
+          // Phase 1: Programmatically apply the initial patch in the worktree
           yield* Effect.logInfo("[CorrectionLoop] Applying initial instructions patch...");
-          yield* controller.applyPatch(tx, patchToApply).pipe(
+          yield* worktreeController.applyPatch(tx, patchToApply).pipe(
             Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply initial instructions patch: ${err.message}`, cause: err }))
           );
 
@@ -110,9 +134,9 @@ export const CorrectionLoopLive = Layer.effect(
           let verified = false;
 
           while (!verified) {
-            // 1. Run static typecheck
+            // 1. Run static typecheck in the worktree
             yield* Effect.logInfo(`[CorrectionLoop] Running typecheck (aggregate attempts: ${aggregateAttempts}/3)...`);
-            const typecheckResult = yield* controller.runTypeCheck(tx).pipe(
+            const typecheckResult = yield* worktreeController.runTypeCheck(tx).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Typecheck execution failed: ${err.message}`, cause: err }))
             );
 
@@ -120,10 +144,10 @@ export const CorrectionLoopLive = Layer.effect(
               yield* Effect.logWarning("[CorrectionLoop] Typecheck failed. Initiating static self-correction...");
 
               if (aggregateAttempts >= 3) {
-                yield* Effect.logError("[CorrectionLoop] Maximum aggregate correction attempts (3) reached on typecheck failure. Aborting execution.");
+                yield* Effect.logError(`[CorrectionLoop] Maximum aggregate correction attempts (3) reached on typecheck failure. Preserving worktree at "${activeCwd}" for diagnostics.`);
                 return yield* Effect.fail(
                   new SelfCorrectionError({
-                    message: "Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during typecheck. Aborting step execution.",
+                    message: `Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during typecheck. Aborting step execution. Worktree preserved at: "${activeCwd}"`,
                   })
                 );
               }
@@ -157,7 +181,7 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               const patchPayload = JSON.stringify(correction);
               aggregateAttempts++;
               yield* Effect.logInfo(`[CorrectionLoop] Applying AI generated corrective patch (attempt ${aggregateAttempts}/3)...`);
-              yield* controller.applyPatch(tx, patchPayload).pipe(
+              yield* worktreeController.applyPatch(tx, patchPayload).pipe(
                 Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply corrective patch: ${err.message}`, cause: err }))
               );
 
@@ -165,9 +189,9 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               continue;
             }
 
-            // 2. Run static lint check
+            // 2. Run static lint check in the worktree
             yield* Effect.logInfo(`[CorrectionLoop] Running lint check (aggregate attempts: ${aggregateAttempts}/3)...`);
-            const lintResult = yield* controller.runLintCheck(tx).pipe(
+            const lintResult = yield* worktreeController.runLintCheck(tx).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Lint check execution failed: ${err.message}`, cause: err }))
             );
 
@@ -175,10 +199,10 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               yield* Effect.logWarning("[CorrectionLoop] Lint check failed. Initiating static self-correction...");
 
               if (aggregateAttempts >= 3) {
-                yield* Effect.logError("[CorrectionLoop] Maximum aggregate correction attempts (3) reached on lint check failure. Aborting execution.");
+                yield* Effect.logError(`[CorrectionLoop] Maximum aggregate correction attempts (3) reached on lint check failure. Preserving worktree at "${activeCwd}" for diagnostics.`);
                 return yield* Effect.fail(
                   new SelfCorrectionError({
-                    message: "Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during lint check. Aborting step execution.",
+                    message: `Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during lint check. Aborting step execution. Worktree preserved at: "${activeCwd}"`,
                   })
                 );
               }
@@ -212,7 +236,7 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               const patchPayload = JSON.stringify(correction);
               aggregateAttempts++;
               yield* Effect.logInfo(`[CorrectionLoop] Applying AI generated corrective patch (attempt ${aggregateAttempts}/3)...`);
-              yield* controller.applyPatch(tx, patchPayload).pipe(
+              yield* worktreeController.applyPatch(tx, patchPayload).pipe(
                 Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply corrective patch: ${err.message}`, cause: err }))
               );
 
@@ -220,9 +244,9 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               continue;
             }
 
-            // 3. Run behavioral test suite
+            // 3. Run behavioral test suite in the worktree
             yield* Effect.logInfo(`[CorrectionLoop] Running behavioral tests (aggregate attempts: ${aggregateAttempts}/3)...`);
-            const testResult = yield* controller.runTestSuite(tx).pipe(
+            const testResult = yield* worktreeController.runTestSuite(tx).pipe(
               Effect.mapError((err) => new SelfCorrectionError({ message: `Test suite execution failed: ${err.message}`, cause: err }))
             );
 
@@ -230,10 +254,10 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               yield* Effect.logWarning("[CorrectionLoop] Behavioral test suite failed. Initiating behavioral self-correction...");
 
               if (aggregateAttempts >= 3) {
-                yield* Effect.logError("[CorrectionLoop] Maximum aggregate correction attempts (3) reached on test suite failure. Aborting execution.");
+                yield* Effect.logError(`[CorrectionLoop] Maximum aggregate correction attempts (3) reached on test suite failure. Preserving worktree at "${activeCwd}" for diagnostics.`);
                 return yield* Effect.fail(
                   new SelfCorrectionError({
-                    message: "Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during testing. Aborting step execution.",
+                    message: `Stage 2 Self-Correction Loop exceeded the maximum threshold of 3 aggregate correction attempts during testing. Aborting step execution. Worktree preserved at: "${activeCwd}"`,
                   })
                 );
               }
@@ -267,7 +291,7 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
               const patchPayload = JSON.stringify(correction);
               aggregateAttempts++;
               yield* Effect.logInfo(`[CorrectionLoop] Applying AI generated corrective patch (attempt ${aggregateAttempts}/3)...`);
-              yield* controller.applyPatch(tx, patchPayload).pipe(
+              yield* worktreeController.applyPatch(tx, patchPayload).pipe(
                 Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to apply corrective patch: ${err.message}`, cause: err }))
               );
 
@@ -279,7 +303,7 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
             verified = true;
           }
 
-          // Save checkpoint upon complete verification
+          // Save checkpoint upon complete verification inside the worktree
           yield* Effect.logInfo("[CorrectionLoop] Saving stable Git checkpoint milestone...");
           const checkpointMessage = `self-correction success - aggregate attempts: ${aggregateAttempts}`;
           
@@ -290,8 +314,14 @@ Respond ONLY with a valid JSON matching the schema of SEARCH/REPLACE blocks. Do 
             );
           }
 
-          const finalTx = yield* controller.createCheckpoint(tx, checkpointMessage, updatedTasks).pipe(
+          const finalTx = yield* worktreeController.createCheckpoint(tx, checkpointMessage, updatedTasks).pipe(
             Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to save stable Git checkpoint: ${err.message}`, cause: err }))
+          );
+
+                    // Clean up the worktree on success
+          yield* Effect.logInfo("[CorrectionLoop] Success! Cleaning up background Git worktree...");
+          yield* controller.deleteWorktree(finalTx).pipe(
+            Effect.mapError((err) => new SelfCorrectionError({ message: `Failed to delete background Git worktree: ${err.message}`, cause: err }))
           );
 
           return finalTx;

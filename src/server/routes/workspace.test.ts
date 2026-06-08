@@ -418,8 +418,24 @@ export function hello(name: string): string {
       );
 
       expect(executeResponse.status).toBe(200);
-      const updatedTx = await executeResponse.json() as any;
-      expect(updatedTx.checkpoints.length).toBe(1);
+      const asyncRes = await executeResponse.json() as any;
+      expect(asyncRes.status).toBe("running");
+      expect(asyncRes.worktreePath).toBeDefined();
+      expect(asyncRes.ephemeralBranch).toBe(tx.ephemeralBranch);
+
+      // Poll until the background task is fully executed and the worktree is cleanly unlinked on success
+      const worktreePath = asyncRes.worktreePath;
+      let completed = false;
+      for (let i = 0; i < 40; i++) {
+        const worktreeExists = await fs.stat(worktreePath).then(() => true).catch(() => false);
+        if (!worktreeExists) {
+          completed = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+
+      expect(completed).toBe(true);
 
       // Re-read file to verify final edits are written to disk
       const finalContent = await fs.readFile(path.join(tempDir, "initial.txt"), "utf-8");
@@ -433,7 +449,7 @@ export function hello(name: string): string {
             "Content-Type": "application/json",
             "X-Grug-Token": token,
           },
-          body: JSON.stringify({ tx: updatedTx, cwd: tempDir }),
+          body: JSON.stringify({ tx: asyncRes.tx, cwd: tempDir }),
         })
       );
     } finally {
@@ -443,7 +459,7 @@ export function hello(name: string): string {
     }
   });
 
-  it("should safely accept POST /research requests with mode 'discussion' and conversation history arrays", async () => {
+  test("should safely accept POST /research requests with mode 'discussion' and conversation history arrays", async () => {
     const token = getActiveToken();
 
     // Mock AI service to return discussion state when called
@@ -707,5 +723,57 @@ export function hello(name: string): string {
       } catch {}
       console.info("[Test:SSE] Teardown complete.");
     }
+  });
+
+  it("should return immediate response containing task metadata on POST /execute-step", async () => {
+    const token = getActiveToken();
+
+    const initResponse = await app.handle(
+      new Request("http://localhost/api/workspace/init", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ taskId: "api-async-metadata-id", cwd: tempDir }),
+      })
+    );
+    expect(initResponse.status).toBe(200);
+    const tx = await initResponse.json() as any;
+
+    const executeResponse = await app.handle(
+      new Request("http://localhost/api/workspace/execute-step", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({
+          tx,
+          targetFiles: ["initial.txt"],
+          instructions: "Modify files",
+          cwd: tempDir
+        })
+      })
+    );
+
+    expect(executeResponse.status).toBe(200);
+    const result = await executeResponse.json() as any;
+    expect(result.status).toBe("running");
+    expect(result.worktreePath).toBeDefined();
+    expect(result.ephemeralBranch).toBe(tx.ephemeralBranch);
+    expect(result.tx).toEqual(tx);
+
+    // Clean up transaction
+    await app.handle(
+      new Request("http://localhost/api/workspace/abort", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Grug-Token": token,
+        },
+        body: JSON.stringify({ tx, cwd: tempDir }),
+      })
+    );
   });
 });

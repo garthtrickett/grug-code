@@ -286,8 +286,8 @@ Grug applied patch success.
     const controller = makeWorkspaceController(tempDir);
     const tx = await Effect.runPromise(controller.initTransaction("task-worktree-ops"));
 
-    const worktreePath = await Effect.runPromise(controller.createWorktree(tx));
-    expect(worktreePath).toContain(".cache/grug-code/worktrees/task-worktree-ops");
+        const worktreePath = await Effect.runPromise(controller.createWorktree(tx));
+    expect(worktreePath).toContain(`.cache/grug-code/worktrees/task-${tx.id}`);
 
     const exists = await fs.stat(worktreePath).then(() => true).catch(() => false);
     expect(exists).toBe(true);

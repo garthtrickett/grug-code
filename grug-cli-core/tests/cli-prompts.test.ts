@@ -30,12 +30,15 @@ vi.mock("@clack/prompts", () => {
 
 describe("Interactive CLI Prompts Test Suite", () => {
   const originalFetch = global.fetch;
+  const originalExit = process.exit;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    process.exit = vi.fn() as any;
   });
 
   afterEach(() => {
+    process.exit = originalExit;
     global.fetch = originalFetch;
   });
 
@@ -93,7 +96,7 @@ describe("Interactive CLI Prompts Test Suite", () => {
     expect(p.text).toHaveBeenCalled();
     expect(p.multiselect).toHaveBeenCalled();
     expect(p.confirm).toHaveBeenCalled();
-    expect(p.outro).toHaveBeenCalledWith("🎉 Grug Code pre-planning approved successfully!");
+    expect(p.outro).toHaveBeenCalledWith("🎉 Grug Code pre-planning approved successfully! (Local execution mode)");
   });
 
   it("should query the online daemon and run plan checks over network successfully", async () => {
@@ -121,6 +124,22 @@ describe("Interactive CLI Prompts Test Suite", () => {
               status: "pending",
               developerNotes: null
             }]
+          })
+        }]
+      }
+    };
+
+    const mockInitTxResult = {
+      jsonrpc: "2.0",
+      id: 2,
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            id: "api-status-test",
+            baseBranch: "main",
+            ephemeralBranch: "grug-task/api-status-test",
+            checkpoints: [],
           })
         }]
       }
@@ -172,9 +191,27 @@ describe("Interactive CLI Prompts Test Suite", () => {
                   json: async () => mockResearchResult
                 });
               }
+              if (bodyObj.params.name === "git_init_tx") {
+                return Promise.resolve({
+                  ok: true,
+                  status: 200,
+                  json: async () => mockInitTxResult
+                });
+              }
             }
           }
         }
+      }
+      if (url.includes("/api/workspace/execute-step")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status: "running",
+            worktreePath: "/mock/cache/worktrees/task-xyz",
+            ephemeralBranch: "grug-task/api-status-test",
+          })
+        });
       }
       return Promise.resolve({ ok: false, status: 400 });
     });
@@ -222,6 +259,7 @@ describe("Interactive CLI Prompts Test Suite", () => {
     expect(p.intro).toHaveBeenCalled();
     expect(p.multiselect).toHaveBeenCalled();
     expect(p.confirm).toHaveBeenCalled();
-    expect(p.outro).toHaveBeenCalledWith("🎉 Grug Code pre-planning approved successfully!");
+    expect(process.exit).toHaveBeenCalledWith(0);
+    expect(p.outro).toHaveBeenCalledWith("🎉 Grug Code background task detached cleanly! Shell released.");
   });
 });

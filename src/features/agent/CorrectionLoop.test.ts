@@ -9,6 +9,8 @@ const mockRunTypeCheck = vi.fn();
 const mockRunLintCheck = vi.fn();
 const mockRunTestSuite = vi.fn();
 const mockCreateCheckpoint = vi.fn();
+const mockCreateWorktree = vi.fn();
+const mockDeleteWorktree = vi.fn();
 
 vi.mock("../../lib/server/WorkspaceController.ts", () => {
   return {
@@ -23,6 +25,8 @@ vi.mock("../../lib/server/WorkspaceController.ts", () => {
       commitTransaction: vi.fn(),
       abortTransaction: vi.fn(),
       listDirectories: vi.fn(),
+      createWorktree: (...args: any[]) => mockCreateWorktree(...args),
+      deleteWorktree: (...args: any[]) => mockDeleteWorktree(...args),
     }),
   };
 });
@@ -48,6 +52,8 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCreateWorktree.mockReturnValue(Effect.succeed("/mock/worktree/path"));
+    mockDeleteWorktree.mockReturnValue(Effect.void);
   });
 
   it("should exit successfully on immediate typecheck success without invoking AI", async () => {
@@ -90,6 +96,8 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     expect(mockRunLintCheck).toHaveBeenCalledTimes(1);
     expect(mockRunTestSuite).toHaveBeenCalledTimes(1);
     expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 0", undefined);
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).toHaveBeenCalledWith(dummyTx);
   });
 
   it("should self-heal compilation failure on first attempt and succeed on second attempt", async () => {
@@ -160,6 +168,8 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
       expect.objectContaining({ provider: "openai" })
     );
     expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 1", undefined);
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).toHaveBeenCalledWith(dummyTx);
   });
 
   it("should succeed when compilation passes but linting fails on first check, applying corrective patch, verifying compiler, and checkpointing", async () => {
@@ -221,9 +231,11 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     expect(mockRunTestSuite).toHaveBeenCalledTimes(1);
     expect(mockApplyPatch).toHaveBeenCalledTimes(2); 
     expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 1", undefined);
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).toHaveBeenCalledWith(dummyTx);
   });
 
-  it("should fail and raise SelfCorrectionError when three consecutive compilation failures occur", async () => {
+  it("should fail and raise SelfCorrectionError when three consecutive compilation failures occur, preserving the worktree for diagnostics", async () => {
     mockApplyPatch.mockReturnValue(Effect.void);
     
     mockRunTypeCheck.mockReturnValue(
@@ -257,12 +269,15 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
       const err = result.left;
       expect(err._tag).toBe("SelfCorrectionError");
       expect(err.message).toContain("exceeded the maximum threshold of 3 aggregate correction attempts during typecheck");
+      expect(err.message).toContain("Worktree preserved at:");
     }
 
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(4);
     expect(mockApplyPatch).toHaveBeenCalledTimes(4); 
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(3);
     expect(mockCreateCheckpoint).not.toHaveBeenCalled();
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).not.toHaveBeenCalled();
   });
 
   it("should compile successfully, fail behavioral tests, apply patch that breaks compilation, apply second patch resolving both, and save checkpoint", async () => {
@@ -312,6 +327,8 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(2);
     expect(mockApplyPatch).toHaveBeenCalledTimes(3); 
     expect(mockCreateCheckpoint).toHaveBeenCalledWith(dummyTx, "self-correction success - aggregate attempts: 2", undefined);
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).toHaveBeenCalledWith(dummyTx);
   });
 
   it("should preserve original stable state and halt safely when aggregate correction threshold is exhausted during the test phase", async () => {
@@ -351,22 +368,20 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
       const err = result.left;
       expect(err._tag).toBe("SelfCorrectionError");
       expect(err.message).toContain("exceeded the maximum threshold of 3 aggregate correction attempts during testing");
+      expect(err.message).toContain("Worktree preserved at:");
     }
 
     expect(mockRunTypeCheck).toHaveBeenCalledTimes(4);
     expect(mockRunTestSuite).toHaveBeenCalledTimes(4);
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(3);
     expect(mockApplyPatch).toHaveBeenCalledTimes(4); 
-    expect(mockCreateCheckpoint).not.toHaveBeenCalled();
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).not.toHaveBeenCalled();
   });
 
   it("should accumulate attempts across all phases and abort when cumulative corrections exceed 3", async () => {
     mockApplyPatch.mockReturnValue(Effect.void);
 
-    // Initial check -> fails typecheck (Correction 1)
-    // Next check -> passes typecheck, fails lint (Correction 2)
-    // Next check -> passes typecheck, passes lint, fails test (Correction 3)
-    // Next check -> passes typecheck, passes lint, fails test (Aborts - attempts is already 3)
     mockRunTypeCheck
       .mockReturnValueOnce(Effect.succeed({ success: false, errorOutput: "tsc broken", dirtyFiles: [] }))
       .mockReturnValue(Effect.succeed({ success: true, dirtyFiles: [] }));
@@ -403,10 +418,12 @@ describe("CorrectionLoop - Stage 2 Type-First Self-Correction Loop", () => {
       const err = result.left;
       expect(err._tag).toBe("SelfCorrectionError");
       expect(err.message).toContain("exceeded the maximum threshold of 3 aggregate correction attempts");
+      expect(err.message).toContain("Worktree preserved at:");
     }
 
     expect(mockGenerateStructuredObject).toHaveBeenCalledTimes(3);
     expect(mockApplyPatch).toHaveBeenCalledTimes(4); 
-    expect(mockCreateCheckpoint).not.toHaveBeenCalled();
+    expect(mockCreateWorktree).toHaveBeenCalledWith(dummyTx);
+    expect(mockDeleteWorktree).not.toHaveBeenCalled();
   });
 });

@@ -70,6 +70,54 @@ mcpServer.tool(
 );
 
 mcpServer.tool(
+  "grug_create_worktree",
+  "Creates a background Git worktree to isolate task edits and verification.",
+  {
+    tx: z.object(gitTransactionZodShape).describe("The active Git transaction details"),
+    cwd: z.string().optional().describe("Working directory of the workspace")
+  },
+  async ({ tx, cwd }) => {
+    const controller = makeWorkspaceController(cwd);
+    const result = await serverRuntime.runPromise(
+      Effect.either(controller.createWorktree(tx))
+    );
+    if (result._tag === "Left") {
+      return {
+        content: [{ type: "text", text: `Error: ${result.left.message}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: result.right }],
+    };
+  }
+);
+
+mcpServer.tool(
+  "grug_delete_worktree",
+  "Deletes the background Git worktree for an active or completed task transaction.",
+  {
+    tx: z.object(gitTransactionZodShape).describe("The active Git transaction details"),
+    cwd: z.string().optional().describe("Working directory of the workspace")
+  },
+  async ({ tx, cwd }) => {
+    const controller = makeWorkspaceController(cwd);
+    const result = await serverRuntime.runPromise(
+      Effect.either(controller.deleteWorktree(tx))
+    );
+    if (result._tag === "Left") {
+      return {
+        content: [{ type: "text", text: `Error: ${result.left.message}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: "Worktree deleted successfully." }],
+    };
+  }
+);
+
+mcpServer.tool(
   "git_create_checkpoint",
   "Create a stable Git checkpoint milestone inside the active task transaction.",
   {

@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { Effect } from "effect";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { makeWorkspaceController, progressBroadcaster } from "../../lib/server/WorkspaceController.ts";
 import { TreeSitterParser, TreeSitterParserLive } from "../../lib/server/TreeSitterParser.ts";
 import { extractSkeleton } from "../../lib/server/SkeletalExplorer.ts";
@@ -361,11 +362,15 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
       cwd: t.Optional(t.String())
     })
   })
-  .post("/execute-step", async ({ body, runEffect, set }) => {
+  .post("/execute-step", async ({ body, runEffect }) => {
+    const homeDir = os.homedir();
+    const worktreePath = path.resolve(homeDir, ".cache", "grug-code", "worktrees", `task-${body.tx.id}`);
+
     const mappedTasks = body.tasks?.map((t) => ({
       ...t,
       developerNotes: t.developerNotes ?? null,
     }));
+
     const effect = Effect.flatMap(CorrectionLoop, (loop) =>
       loop.runStep({
         tx: body.tx,
@@ -378,15 +383,26 @@ export const workspaceRoutes = new Elysia({ prefix: "/api/workspace" })
     ).pipe(
       Effect.provide(CorrectionLoopLive),
       Effect.provide(AiServiceLive),
-      Effect.provide(TreeSitterParserLive)
+      Effect.provide(TreeSitterParserLive),
+      Effect.catchAll((err) => {
+        progressBroadcaster.emit("progress", JSON.stringify({
+          type: "status",
+          status: "failed",
+          error: err.message
+        }));
+        return Effect.void;
+      })
     );
 
-    const res = await runEffect(Effect.either(effect));
-    if (res._tag === "Left") {
-      set.status = 400;
-      return { error: res.left.message };
-    }
-    return res.right;
+    // Fork the execution on the server's daemon runtime so it executes asynchronously
+    await runEffect(Effect.forkDaemon(effect));
+
+    return {
+      status: "running",
+      worktreePath,
+      ephemeralBranch: body.tx.ephemeralBranch,
+      tx: body.tx
+    };
   }, {
     body: t.Object({
       tx: txSchema,
