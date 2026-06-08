@@ -203,10 +203,10 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     proposedTasksSignal.value = [];
   });
 
-  it("should trigger initTaskQueue with modified file selections and custom steps on click approve", async () => {
+    it("should trigger initTaskQueue with modified file selections and custom steps on click approve", async () => {
     isPlanningSignal.value = true;
     proposedFilesSignal.value = ["src/a.ts", "src/b.ts"];
-    proposedTasksSignal.value = [
+    const expectedTasks = [
       {
         id: "task-proposed-1",
         description: "Planned Step",
@@ -214,6 +214,7 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
         status: "pending",
       }
     ];
+    proposedTasksSignal.value = expectedTasks;
 
     mockCallTool.mockImplementation((name, args) => {
       if (name === "git_init_tx") {
@@ -239,14 +240,14 @@ describe("GrugTaskBoard - Lit Component & UI Renderer", () => {
     expect(approveBtn).toBeDefined();
     approveBtn?.click();
 
-    expect(approveSpy).toHaveBeenCalledWith(
+        expect(approveSpy).toHaveBeenCalledWith(
       expect.stringContaining("-"),
       expect.any(String),
       ["src/a.ts"],
       undefined,
       expect.any(String),
       expect.any(String),
-      proposedTasksSignal.value
+      expectedTasks
     );
 
     isPlanningSignal.value = false;
