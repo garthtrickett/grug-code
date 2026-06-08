@@ -32,7 +32,7 @@ const compiledClaudeConfig = {
 console.error("Grug Config Generator:");
 console.error("--------------------------------------------------");
 console.error("For rapid hot-reloading development (Bun source):");
-console.log(JSON.stringify(claudeConfig, null, 2));
+console.info(JSON.stringify(claudeConfig, null, 2));
 console.error("--------------------------------------------------");
 console.error("For optimized production use (Compiled binary):");
-console.log(JSON.stringify(compiledClaudeConfig, null, 2));
+console.info(JSON.stringify(compiledClaudeConfig, null, 2));

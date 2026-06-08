@@ -10,17 +10,20 @@ import { SurgicalRouterLive } from "./features/SurgicalRouter.ts";
 import { TokenEstimatorLive } from "./lib/TokenEstimator.ts";
 
 // Prevent global stdout logging from corrupting standard JSON-RPC streams
-console.log = (...args: unknown[]) => {
+console.info = (...args: unknown[]) => {
   console.error("[Redirected stdout]:", ...args);
 };
 
-const DaemonLive = Layer.mergeAll(
-  ProjectStructureMapperLive,
-  ResearchLoopLive,
-  AiServiceLive,
-  TreeSitterParserLive,
-  SurgicalRouterLive,
-  TokenEstimatorLive
+const DaemonLive = SurgicalRouterLive.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      ProjectStructureMapperLive,
+      ResearchLoopLive,
+      AiServiceLive,
+      TreeSitterParserLive,
+      TokenEstimatorLive
+    )
+  )
 );
 
 const daemonRuntime = ManagedRuntime.make(DaemonLive);
@@ -93,7 +96,7 @@ server.tool(
   }
 );
 
-if (import.meta.main && process.env.NODE_ENV !== "test") {
+if (import.meta.main) {
   const transport = new StdioServerTransport();
   server.connect(transport).then(() => {
     console.error("[Daemon] Stdio server connected successfully.");

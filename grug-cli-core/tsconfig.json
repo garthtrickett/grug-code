@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "es2022",
     "module": "preserve",
+    "moduleResolution": "bundler",
     "moduleDetection": "force",
     "isolatedModules": true,
     "strict": true,

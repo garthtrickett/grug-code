@@ -6,26 +6,27 @@ import pluginLitA11y from "eslint-plugin-lit-a11y";
 import globals from "globals";
 
 export default tseslint.config(
-  // 1. Global ignores [cite: 381]
+  // 1. Global ignores
   {
-        ignores: [
+    ignores: [
       ".vite/",
       "node_modules/",
       "coverage/",
       "dist/",
       "dev-dist/",
       "g.txt",
-            "src/types/generated/*",
+      "src/types/generated/*",
       "src/lib/client/wasm/*",
       "*.cjs",
       "llm/",
       "vite.config.ts",
+      "**/vitest.config.ts",
       "postcss.config.js",
       "tailwind.config.js",
       ".kanelrc.js",
-            "eslint.config.js",
+      "eslint.config.js",
       "patch-rayon.js",
-            "**/*test.ts",
+      "**/*test.ts",
       "android",
       "ios",
       "web-test-runner.config.js",
@@ -104,7 +105,7 @@ export default tseslint.config(
 
   // 5. Test specific overrides
   {
-    files:["tests/e2e/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
+    files: ["tests/e2e/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
     rules: {
       "@typescript-eslint/await-thenable": "off",
       "@typescript-eslint/no-floating-promises": "off"

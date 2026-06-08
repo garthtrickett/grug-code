@@ -26,6 +26,7 @@ export interface IAiService {
     readonly modelName?: string;
     readonly system?: string;
     readonly prompt: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }) => Effect.Effect<StreamTextResult<any, any>, AIInferenceError>;
 }
 
@@ -45,7 +46,7 @@ export const AiServiceLive = Layer.sync(
     });
 
     const defaultGeminiModel = "gemini-flash-latest";
-    const defaultOpenaiModel = "openai/gpt-4o-mini";
+    const defaultOpenaiModel = "gpt-5.4-mini";
     const defaultDeepseekModel = "deepseek-v4-flash";
 
     return {
@@ -69,28 +70,32 @@ export const AiServiceLive = Layer.sync(
               const isDiscussionMode = system && system.includes("\"discussion\" mode is enabled");
               if (isDiscussionMode && !prompt.includes("Proceed with plan")) {
                 return {
-                  status: "discussion",
-                  discussionText: "Grug has analyzed your codebase. Let's discuss Option A vs Option B.",
-                  suggestedOptions: ["Proceed with plan", "Compare details"]
+                  response: {
+                    status: "discussion",
+                    discussionText: "Grug has analyzed your codebase. Let's discuss Option A vs Option B.",
+                    suggestedOptions: ["Proceed with plan", "Compare details"]
+                  }
                 } as unknown as T;
               }
               return {
-                status: "resolved",
-                target_files: ["initial.txt", "main.ts", "worker.ts"],
-                plan: [
-                  {
-                    id: "step-mock-analysis",
-                    description: "Analyze codebase targets",
-                    targetFiles: ["initial.txt"],
-                    status: "completed"
-                  },
-                  {
-                    id: "step-mock-patch",
-                    description: "Apply custom patch",
-                    targetFiles: ["initial.txt"],
-                    status: "pending"
-                  }
-                ]
+                response: {
+                  status: "resolved",
+                  target_files: ["initial.txt", "main.ts", "worker.ts"],
+                  plan: [
+                    {
+                      id: "step-mock-analysis",
+                      description: "Analyze codebase targets",
+                      targetFiles: ["initial.txt"],
+                      status: "completed"
+                    },
+                    {
+                      id: "step-mock-patch",
+                      description: "Apply custom patch",
+                      targetFiles: ["initial.txt"],
+                      status: "pending"
+                    }
+                  ]
+                }
               } as unknown as T;
             }
             return { files: [] } as unknown as T;

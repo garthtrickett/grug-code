@@ -925,7 +925,7 @@ const getVal = (name: string): string => {
                           >
                             <option value="deepseek">Deepseek V4 flash (Default) </option>
                             <option value="gemini">Google Gemini </option>
-                            <option value="openai">OpenAI (GPT-4o)</option>
+                            <option value="openai">OpenAI (GPT-5.4-mini)</option>
                           </select>
                         </div>
 

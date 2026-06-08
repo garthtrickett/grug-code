@@ -5,7 +5,7 @@ export const PlanTaskSchema = z.object({
   description: z.string(),
   targetFiles: z.array(z.string()),
   status: z.enum(["pending", "running", "completed", "failed"]),
-  developerNotes: z.string().optional(),
+  developerNotes: z.string().nullable(),
 });
 
 export type PlanTask = z.infer<typeof PlanTaskSchema>;
@@ -29,6 +29,12 @@ export const PlanningResponseSchema = z.discriminatedUnion("status", [
 ]);
 
 export type PlanningResponse = z.infer<typeof PlanningResponseSchema>;
+
+export const PlanningResponseEnvelopeSchema = z.object({
+  response: PlanningResponseSchema,
+});
+
+export type PlanningResponseEnvelope = z.infer<typeof PlanningResponseEnvelopeSchema>;
 
 export const GapAnalysisItemSchema = z.object({
   aspect: z.string(),

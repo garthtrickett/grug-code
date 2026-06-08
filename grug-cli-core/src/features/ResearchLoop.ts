@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { AiService, AIInferenceError } from "../lib/AiService.ts";
 import { TreeSitterParser } from "../lib/TreeSitterParser.ts";
 import { extractSkeleton, ParserError } from "../lib/SkeletalExplorer.ts";
-import { PlanningResponseSchema, PlanTask } from "../lib/ai-schemas.ts";
+import { PlanningResponseEnvelopeSchema, PlanTask } from "../lib/ai-schemas.ts";
 import { Data } from "effect";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -135,12 +135,14 @@ ${skeletonsContext}${turnWarning}
 Please review your current state. If you are in discussion mode, provide a response with status "discussion" containing your detailed analysis in "discussionText" and options in "suggestedOptions". If you are ready to implement, transition to status "resolved" and provide "target_files" and "plan".`;
 
           yield* Effect.logDebug(`[ResearchLoop] Dispatching turn context to AiService...`);
-          const response = yield* ai.generateStructuredObject({
+          const envelope = yield* ai.generateStructuredObject({
             system: mode === "discussion" ? discussionSystemPrompt : systemPrompt,
             prompt,
-            schema: PlanningResponseSchema,
+            schema: PlanningResponseEnvelopeSchema,
             provider,
           });
+
+          const response = envelope.response;
 
           if (response.status === "resolved") {
             yield* Effect.logInfo(`[ResearchLoop] LLM successfully resolved planning on turn #${turnCount}.`);

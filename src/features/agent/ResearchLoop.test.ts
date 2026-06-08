@@ -28,7 +28,7 @@ describe("ResearchLoop - Stage 1 Skeletal Research Loop Service", () => {
             const res = responses[callCount];
             if (res) {
               callCount++;
-              return res;
+              return { response: res };
             }
             throw new Error("No response mocked for current call index");
           }),

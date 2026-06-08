@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Effect, Layer } from "effect";
 import { runCli } from "../src/cli.ts";
-import { ProjectStructureMapper } from "../src/features/ProjectStructureMapper.ts";
-import { ResearchLoop } from "../src/features/ResearchLoop.ts";
+import { ProjectStructureMapper, ProjectStructureMapperLive } from "../src/features/ProjectStructureMapper.ts";
+import { ResearchLoop, ResearchLoopLive } from "../src/features/ResearchLoop.ts";
 import { AiService } from "../src/lib/AiService.ts";
 import { TreeSitterParserLive } from "../src/lib/TreeSitterParser.ts";
 import { SurgicalRouterLive } from "../src/features/SurgicalRouter.ts";
@@ -65,13 +65,16 @@ describe("Interactive CLI Prompts Test Suite", () => {
       })
     );
 
-    const testRuntime = Layer.mergeAll(
-      mockMapper,
-      mockLoop,
-      mockAi,
-      TreeSitterParserLive,
-      SurgicalRouterLive,
-      TokenEstimatorLive
+    const testRuntime = SurgicalRouterLive.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(
+          mockMapper,
+          mockLoop,
+          mockAi,
+          TreeSitterParserLive,
+          TokenEstimatorLive
+        )
+      )
     );
 
     const program = runCli().pipe(Effect.provide(testRuntime));

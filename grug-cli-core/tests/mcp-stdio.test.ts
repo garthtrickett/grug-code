@@ -41,7 +41,10 @@ describe("Stdio MCP Daemon Tool Integration Tests", () => {
     await fs.mkdir(tempDir, { recursive: true });
     await fs.writeFile(path.join(tempDir, "sanity.ts"), "const test = 1;\n");
 
-    const result = await client.callTool("grug_map_project", { cwd: tempDir });
+    const result = (await client.callTool({
+      name: "grug_map_project",
+      arguments: { cwd: tempDir }
+    })) as any;
     expect(result.content[0].text).toContain("sanity.ts");
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});

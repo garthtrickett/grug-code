@@ -67,7 +67,7 @@ describe("AiService Layer", () => {
 
     const result = await Effect.runPromise(program);
     expect(result).toEqual({ success: true });
-    expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-4o-mini");
+    expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-5.4-mini");
     expect(mockGenerateObject).toHaveBeenCalled();
   });
 
@@ -154,7 +154,7 @@ describe("AiService Layer", () => {
     const result = await Effect.runPromise(program);
     expect(result).toBeDefined();
     expect((result as any).textStream).toBe("openai-streaming-chunks");
-    expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-4o-mini");
+    expect(mockOpenaiModel).toHaveBeenCalledWith("openai/gpt-5.4-mini");
     expect(mockStreamText).toHaveBeenCalled();
   });
 

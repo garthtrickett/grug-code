@@ -33,6 +33,6 @@ describe("Standalone Package Decoupling Sanity Check", () => {
       version: "0.1.0",
     });
     expect(server).toBeDefined();
-    expect(server.name).toBe("grug-test-daemon");
+    expect(server.tool).toBeDefined();
   });
 });

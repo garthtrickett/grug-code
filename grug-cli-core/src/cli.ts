@@ -7,13 +7,16 @@ import { TreeSitterParserLive } from "./lib/TreeSitterParser.ts";
 import { SurgicalRouterLive } from "./features/SurgicalRouter.ts";
 import { TokenEstimatorLive } from "./lib/TokenEstimator.ts";
 
-const CliLive = Layer.mergeAll(
-  ProjectStructureMapperLive,
-  ResearchLoopLive,
-  AiServiceLive,
-  TreeSitterParserLive,
-  SurgicalRouterLive,
-  TokenEstimatorLive
+const CliLive = SurgicalRouterLive.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      ProjectStructureMapperLive,
+      ResearchLoopLive,
+      AiServiceLive,
+      TreeSitterParserLive,
+      TokenEstimatorLive
+    )
+  )
 );
 
 const cliRuntime = ManagedRuntime.make(CliLive);
@@ -35,8 +38,8 @@ export const runCli = () =>
         p.text({
           message: "What feature or fix do you want Grug to pre-plan?",
           placeholder: "e.g. Add payment gateway",
-          validate(value) {
-            if (!value.trim()) return "Task prompt is required!";
+          validate(value: string | undefined) {
+            if (!value || !value.trim()) return "Task prompt is required!";
           },
         })
       );
@@ -98,8 +101,8 @@ export const runCli = () =>
           const customInput = yield* Effect.promise(() =>
             p.text({
               message: "Type your custom reply:",
-              validate(value) {
-                if (!value.trim()) return "Reply cannot be empty!";
+              validate(value: string | undefined) {
+                if (!value || !value.trim()) return "Reply cannot be empty!";
               },
             })
           );
@@ -150,7 +153,7 @@ export const runCli = () =>
     }
   });
 
-if (import.meta.main && process.env.NODE_ENV !== "test") {
+if (import.meta.main) {
   cliRuntime.runPromise(runCli()).catch((err) => {
     p.cancel(`Catastrophic error: ${String(err)}`);
     process.exit(1);
