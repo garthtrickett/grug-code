@@ -3,13 +3,23 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { clientLog } from "./clientLog.ts";
 
+export interface McpContent {
+  readonly type: string;
+  readonly text?: string;
+}
+
+export interface McpCallToolResult {
+  readonly content: readonly McpContent[];
+  readonly isError?: boolean;
+}
+
 export interface IMcpClientService {
   readonly client: Client;
   readonly connect: () => Effect.Effect<void, Error>;
   readonly callTool: (
     name: string,
     args: Record<string, unknown>
-  ) => Effect.Effect<any, Error>;
+  ) => Effect.Effect<McpCallToolResult, Error>;
 }
 
 export class McpClientService extends Context.Tag("app/McpClientService")<
@@ -54,7 +64,7 @@ export const McpClientLive = Layer.effect(
         yield* clientLog("info", "[McpClientService] MCP Client connected and initialized.");
       });
 
-        const callTool = (name: string, args: Record<string, unknown>) =>
+                const callTool = (name: string, args: Record<string, unknown>) =>
       Effect.gen(function* () {
         yield* connect();
 
@@ -67,13 +77,14 @@ export const McpClientLive = Layer.effect(
 
         yield* clientLog("debug", `[McpClientService] Tool '${name}' returned response:`, response);
 
-                const res = response as any;
+        const res = response as unknown as McpCallToolResult;
         if (res.isError) {
-          const errMsg = res.content?.[0]?.type === "text" ? res.content[0].text : "Unknown tool execution error";
+          const firstContent = res.content[0];
+          const errMsg = firstContent && firstContent.type === "text" ? (firstContent.text ?? "Unknown error") : "Unknown tool execution error";
           return yield* Effect.fail(new Error(errMsg));
         }
 
-        return response;
+        return res;
       });
 
     return {

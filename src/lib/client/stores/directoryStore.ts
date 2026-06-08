@@ -19,13 +19,14 @@ export const fetchWorkspaceDirectories = (cwd?: string) =>
       return yield* Effect.fail(new Error(`Failed to fetch directories: ${responseResult.left.message}`));
     }
 
-    const res = responseResult.right;
-    const text = res.content?.[0]?.text;
+        const res = responseResult.right;
+    const firstContent = res.content[0];
+    const text = firstContent?.text;
     if (!text) {
       return yield* Effect.fail(new Error("Failed to parse directories: empty response"));
     }
 
-    const data = JSON.parse(text) as readonly string[];
+    const data = (JSON.parse(text) as unknown) as readonly string[];
     directoriesSignal.value = data;
     yield* clientLog("debug", `[directoryStore] Subdirectories hydrated: ${data.length} items`);
     return data;

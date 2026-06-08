@@ -19,6 +19,19 @@ export interface GitTransaction {
   readonly provider?: "gemini" | "openai" | "deepseek";
 }
 
+export interface ReconciledState {
+  readonly tx: GitTransaction | null;
+  readonly tasks: readonly PlanTask[];
+}
+
+export interface ResearchResult {
+  readonly status: "discussion" | "resolved" | "exploring";
+  readonly discussionText?: string;
+  readonly suggestedOptions?: readonly string[];
+  readonly target_files?: readonly string[];
+  readonly plan?: readonly PlanTask[];
+}
+
 const getStoredTx = (): GitTransaction | null => {
   if (typeof localStorage === "undefined") return null;
   const stored = localStorage.getItem("grug-active-tx");
@@ -118,7 +131,7 @@ export const taskStore = {
       }
     }),
 
-  reconcileActiveTransaction: (cwd?: string) =>
+    reconcileActiveTransaction: (cwd?: string) =>
     Effect.gen(function* () {
       errorSignal.value = null;
       yield* clientLog("info", "[taskStore] Reconciling active transaction state with server...");
@@ -133,10 +146,19 @@ export const taskStore = {
       }
 
       const res = response.right;
-      const text = res.content?.[0]?.text;
-      const state = text ? JSON.parse(text) : null;
+      const firstContent = res.content[0];
+      const text = firstContent?.text;
+      
+      let state: ReconciledState | null = null;
+      if (text) {
+        try {
+          state = (JSON.parse(text) as unknown) as ReconciledState;
+        } catch {
+          state = null;
+        }
+      }
 
-      if (state && typeof state === "object" && "tx" in state && state.tx) {
+      if (state && typeof state === "object" && state.tx) {
         yield* clientLog("info", `[taskStore] Active transaction reconciled successfully via MCP: id=${state.tx.id}`);
         activeTxSignal.value = state.tx;
         tasksSignal.value = state.tasks || [];
@@ -146,7 +168,7 @@ export const taskStore = {
           localStorage.setItem("grug-active-tasks", JSON.stringify(state.tasks || []));
         }
 
-        const hasPending = (state.tasks || []).some((t: any) => t.status === "pending");
+        const hasPending = (state.tasks || []).some((t) => t.status === "pending");
         if (!isPausedSignal.value && hasPending) {
           yield* clientLog("info", "[taskStore] Active pending tasks found. Resuming autopilot runner...");
           yield* Effect.forkDaemon(taskStore.autoRunQueue(cwd));
@@ -272,14 +294,15 @@ export const taskStore = {
         return yield* Effect.fail(responseResult.left);
       }
 
-      const res = responseResult.right;
-      const text = res.content?.[0]?.text;
+            const res = responseResult.right;
+      const firstContent = res.content[0];
+      const text = firstContent?.text;
       if (!text) {
         errorSignal.value = "Failed to parse initial transaction data";
         return yield* Effect.fail(new Error("Failed to parse initial transaction data"));
       }
 
-      const tx = JSON.parse(text) as GitTransaction;
+      const tx = (JSON.parse(text) as unknown) as GitTransaction;
 
       tasksSignal.value = initialTasks;
       activeTxSignal.value = tx;
@@ -344,8 +367,9 @@ export const taskStore = {
           return yield* Effect.fail(responseResult.left);
         }
 
-        const res = responseResult.right;
-        const text = res.content?.[0]?.text;
+                const res = responseResult.right;
+        const firstContent = res.content[0];
+        const text = firstContent?.text;
         if (!text) {
           errorSignal.value = "Failed to parse updated transaction data";
           tasksSignal.value = tasksSignal.value.map((t) =>
@@ -354,7 +378,7 @@ export const taskStore = {
           return yield* Effect.fail(new Error("Failed to parse updated transaction data"));
         }
 
-        const updatedTx = JSON.parse(text) as GitTransaction;
+        const updatedTx = (JSON.parse(text) as unknown) as GitTransaction;
         activeTxSignal.value = updatedTx;
         tasksSignal.value = tasksSignal.value.map((t) =>
           t.id === task.id ? { ...t, status: "completed" } : t
@@ -454,14 +478,15 @@ export const taskStore = {
         return yield* Effect.fail(responseResult.left);
       }
 
-      const res = responseResult.right;
-      const text = res.content?.[0]?.text;
+            const res = responseResult.right;
+      const firstContent = res.content[0];
+      const text = firstContent?.text;
       if (!text) {
         errorSignal.value = "Failed to parse rollback transaction data";
         return yield* Effect.fail(new Error("Failed to parse rollback transaction data"));
       }
 
-      const updatedTx = JSON.parse(text) as GitTransaction;
+      const updatedTx = (JSON.parse(text) as unknown) as GitTransaction;
       activeTxSignal.value = updatedTx;
       
       tasksSignal.value = tasksSignal.value.map((task) =>
