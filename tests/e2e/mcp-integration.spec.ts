@@ -168,29 +168,34 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     await execPromise("git", ["commit", "-m", "Initial commit"]);
   });
 
-  test.afterEach(async () => {
+    test.afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
-  test("should successfully spawn companion daemon in --mcp mode and execute list_directories and read_file_content tools", async () => {
-    // Spawn the companion daemon in MCP stdio mode
-    const child = spawn("bun", ["run", "src/server/index.ts", "--mcp"], {
-      env: {
-        ...process.env,
-        DATABASE_URL: process.env.DATABASE_URL_TEST || process.env.DATABASE_URL,
-      }
-    });
+  test("should successfully connect to Elysia sidecar SSE transport and execute list_directories and read_file_content tools", async () => {
+    // 1. Establish SSE Connection
+    const sseResponse = await fetch("http://127.0.0.1:42069/api/mcp/sse");
+    expect(sseResponse.status).toBe(200);
+    expect(sseResponse.headers.get("Content-Type")).toContain("text/event-stream");
 
-    let stdoutData = "";
-    child.stdout.on("data", (chunk: unknown) => {
-      if (Buffer.isBuffer(chunk)) {
-        stdoutData += chunk.toString("utf-8");
-      } else {
-        stdoutData += String(chunk);
-      }
-    });
+    const reader = sseResponse.body?.getReader();
+    expect(reader).toBeDefined();
+    if (!reader) return;
 
-    // We write a JSON-RPC 2.0 initialize request to perform the MCP handshake
+    // Read the first event to capture the session ID
+    const { value } = await reader.read();
+    const firstEventText = new TextDecoder().decode(value);
+    expect(firstEventText).toContain("event: endpoint");
+
+    const match = /sessionId=([a-zA-Z0-9\-]+)/.exec(firstEventText);
+    const sessionId = match?.[1];
+    expect(sessionId).toBeDefined();
+    if (!sessionId) {
+      await reader.cancel();
+      return;
+    }
+
+    // 2. Perform Initialize Handshake
     const initializeRequest = {
       jsonrpc: "2.0",
       id: 1,
@@ -205,12 +210,18 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       },
     };
 
-    child.stdin.write(JSON.stringify(initializeRequest) + "\n");
+    const initPostResponse = await fetch(`http://127.0.0.1:42069/api/mcp/messages?sessionId=${sessionId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(initializeRequest),
+    });
+    expect(initPostResponse.status).toBe(200);
+    const initResult = await initPostResponse.json() as any;
+    expect(initResult.jsonrpc).toBe("2.0");
 
-    // Wait for the initialization response from the server
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Send a tools/call request to list the subdirectories inside the workspace sandbox
+    // 3. Call list_directories tool
     const callToolsRequest = {
       jsonrpc: "2.0",
       id: 2,
@@ -223,174 +234,83 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
       },
     };
 
-    child.stdin.write(JSON.stringify(callToolsRequest) + "\n");
+    const callPostResponse = await fetch(`http://127.0.0.1:42069/api/mcp/messages?sessionId=${sessionId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(callToolsRequest),
+    });
+    expect(callPostResponse.status).toBe(200);
+    const toolResult = await callPostResponse.json() as any; 
+    expect(toolResult.jsonrpc).toBe("2.0");
+    expect(toolResult.result?.content?.[0]?.text).toBeDefined();
 
-    // Wait for output processing to complete
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Verify directory lists 'main.ts'
+    const textData = toolResult.result.content[0].text;
+    expect(textData).toContain("main.ts");
 
-    // Terminate process cleanly
-    child.kill();
-
-    // Verify stdout has standard JSON-RPC structures
-    expect(stdoutData).toContain("jsonrpc");
-    expect(stdoutData).toContain("result");
-    expect(stdoutData).toContain("content");
+    await reader.cancel();
   });
 
-  test("should successfully spawn companion daemon in UDS MCP mode and handle SSE transport connections cleanly", async () => {
-    const testSocketPath = path.resolve(`/tmp/grug-mcp-uds-test-${crypto.randomUUID()}.sock`);
+  test("should successfully negotiate standard MCP tools/list and return registered companion tools", async () => {
+    // 1. Establish SSE Connection
+    const sseResponse = await fetch("http://127.0.0.1:42069/api/mcp/sse");
+    expect(sseResponse.status).toBe(200);
 
-    // Prepare directory and clean up stale test socket files
-    try {
-      const dir = path.dirname(testSocketPath);
-      if (!fsSync.existsSync(dir)) {
-        await fs.mkdir(dir, { recursive: true });
-      }
-      if (fsSync.existsSync(testSocketPath)) {
-        await fs.unlink(testSocketPath);
-      }
-    } catch {}
+    const reader = sseResponse.body?.getReader();
+    expect(reader).toBeDefined();
+    if (!reader) return;
 
-    // Spawn companion daemon in UDS MCP mode
-    const child = spawn("bun", ["run", "src/server/index.ts", "--mcp", "--transport=uds"], {
-      env: {
-        ...process.env,
-        DATABASE_URL: process.env.DATABASE_URL_TEST || process.env.DATABASE_URL,
-        SURGICAL_ROUTER_SOCKET_PATH: testSocketPath,
-      }
-    });
-
-    child.stdout.on("data", (chunk: unknown) => {
-      const text = Buffer.isBuffer(chunk)
-        ? chunk.toString("utf-8")
-        : typeof chunk === "string"
-          ? chunk
-          : String(chunk);
-      console.info(`[Child Daemon STDOUT] ${text}`);
-    });
-    child.stderr.on("data", (chunk: unknown) => {
-      const text = Buffer.isBuffer(chunk)
-        ? chunk.toString("utf-8")
-        : typeof chunk === "string"
-          ? chunk
-          : String(chunk);
-      console.error(`[Child Daemon STDERR] ${text}`);
-    });
-
-    // Wait for the socket file to be created on disk by Elysia UDS startup
-    let exists = false;
-    for (let i = 0; i < 40; i++) {
-      if (fsSync.existsSync(testSocketPath)) {
-        exists = true;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    const { value } = await reader.read();
+    const firstEventText = new TextDecoder().decode(value);
+    const match = /sessionId=([a-zA-Z0-9\-]+)/.exec(firstEventText);
+    const sessionId = match?.[1];
+    expect(sessionId).toBeDefined();
+    if (!sessionId) {
+      await reader.cancel();
+      return;
     }
-    expect(exists).toBe(true);
 
-    try {
-      // Connect to the UDS SSE endpoint using Bun's native UDS fetch
-      const sseResponse = await fetch("http://localhost/api/mcp/sse", {
-        unix: testSocketPath,
-      });
+    // 2. Initialize Handshake
+    const initializeRequest = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "Playwright-Test-Client", version: "1.0.0" },
+      },
+    };
+    await fetch(`http://127.0.0.1:42069/api/mcp/messages?sessionId=${sessionId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(initializeRequest),
+    });
 
-      expect(sseResponse.status).toBe(200);
-      expect(sseResponse.headers.get("Content-Type")).toContain("text/event-stream");
+    // 3. Request tools/list
+    const listToolsRequest = {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+    };
 
-      const reader = sseResponse.body?.getReader();
-      expect(reader).toBeDefined();
+    const toolsResponse = await fetch(`http://127.0.0.1:42069/api/mcp/messages?sessionId=${sessionId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(listToolsRequest),
+    });
 
-      if (reader) {
-        // Read the first event to capture the endpoint session ID parameter
-        const { value } = await reader.read();
-        const firstEventText = new TextDecoder().decode(value);
-        
-        expect(firstEventText).toContain("event: endpoint");
-        expect(firstEventText).toContain("data: /api/mcp/messages?sessionId=");
+    expect(toolsResponse.status).toBe(200);
+    const toolsResult = await toolsResponse.json() as any;
+    expect(toolsResult.jsonrpc).toBe("2.0");
 
-        // Extract the session ID from the endpoint data
-        const match = /sessionId=([a-zA-Z0-9\-]+)/.exec(firstEventText);
-        const sessionId = match?.[1];
-        expect(sessionId).toBeDefined();
+    const tools = toolsResult.result?.tools || [];
+    expect(tools.some((t: any) => t.name === "list_directories")).toBe(true);
+    expect(tools.some((t: any) => t.name === "read_file_content")).toBe(true);
 
-        if (sessionId) {
-          // Perform the initialize handshake POST message over UDS
-          const initializeRequest = {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "initialize",
-            params: {
-              protocolVersion: "2024-11-05",
-              capabilities: {},
-              clientInfo: {
-                name: "Playwright-UDS-Test-Client",
-                version: "1.0.0",
-              },
-            },
-          };
-
-          const initPostResponse = await fetch(`http://localhost/api/mcp/messages?sessionId=${sessionId}`, {
-            unix: testSocketPath,
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(initializeRequest),
-          });
-
-          if (initPostResponse.status !== 200) {
-            console.error(`[E2E UDS Test] initPostResponse failed! Status: ${initPostResponse.status}`);
-            console.error(`[E2E UDS Test] Response body: ${await initPostResponse.text()}`);
-          }
-
-          expect(initPostResponse.status).toBe(200);
-          const initResult = (await initPostResponse.json()) as McpResponse;
-          expect(initResult.jsonrpc).toBe("2.0");
-          expect(initResult.result?.protocolVersion).toBeDefined();
-
-          // Invoke the list_directories tool via UDS message POST
-          const callToolsRequest = {
-            jsonrpc: "2.0",
-            id: 2,
-            method: "tools/call",
-            params: {
-              name: "list_directories",
-              arguments: {
-                cwd: tempDir,
-              },
-            },
-          };
-
-          const callPostResponse = await fetch(`http://localhost/api/mcp/messages?sessionId=${sessionId}`, {
-            unix: testSocketPath,
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(callToolsRequest),
-          });
-
-          if (callPostResponse.status !== 200) {
-            console.error(`[E2E UDS Test] callPostResponse failed! Status: ${callPostResponse.status}`);
-            console.error(`[E2E UDS Test] Response body: ${await callPostResponse.text()}`);
-          }
-
-          expect(callPostResponse.status).toBe(200);
-          const toolResult = (await callPostResponse.json()) as McpResponse;
-          expect(toolResult.jsonrpc).toBe("2.0");
-          expect(toolResult.result?.content?.[0]?.text).toBeDefined();
-        }
-
-        await reader.cancel();
-      }
-    } finally {
-      // Terminate child process and clean up socket file cleanly
-      child.kill();
-      try {
-        if (fsSync.existsSync(testSocketPath)) {
-          await fs.unlink(testSocketPath);
-        }
-      } catch {}
-    }
+    await reader.cancel();
+  });
   });
 });

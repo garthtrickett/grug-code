@@ -18,8 +18,8 @@ export default defineConfig({
   reporter: "list",
   timeout: 60000, 
   
-  use: {
-    baseURL: "http://127.0.0.1:3001",
+    use: {
+    baseURL: "http://127.0.0.1:42069",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: process.env.CI ? "retain-on-failure" : "off",
@@ -40,15 +40,14 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "npm run dev",
-    url: "http://127.0.0.1:3001",
+    command: "./dist/grug-daemon",
+    url: "http://127.0.0.1:42069",
     reuseExistingServer: !process.env.CI,
     stdout: "pipe",
     stderr: "pipe",
     timeout: 120 * 1000,
     ignoreHTTPSErrors: true,
     env: {
-      PORT: "3001",
       BACKEND_PORT: "42069",
       VITE_SILENT_CLIENT_LOGGING: "true",
       SURGICAL_ROUTER_FILE_LIMIT: "3",
