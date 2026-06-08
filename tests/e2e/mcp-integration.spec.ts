@@ -1,3 +1,4 @@
+// File: tests/e2e/mcp-integration.spec.ts
 import { test, expect } from "./utils/base-test.ts";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
@@ -174,9 +175,11 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     await execPromise("git", ["config", "user.email", "mcpe2e@test.com"]);
     await execPromise("git", ["config", "commit.gpgSign", "false"]);
 
-    await fs.writeFile(path.join(tempDir, "main.ts"), "export const x = 42;\n");
-    await execPromise("git", ["add", "main.ts"]);
-    await execPromise("git", ["commit", "-m", "Initial commit"]);
+    // Create a subdirectory so we can properly test list_directories
+    await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, "src/main.ts"), "export const x = 42;\n");
+    await execPromise("git", ["add", "src/main.ts"]);
+    await execPromise("git", ["commit", "-m", "Initial commit with subdirectory"]);
   });
 
   test.afterEach(async () => {
@@ -257,9 +260,9 @@ test.describe("Grug Code MCP Server Integration E2E", () => {
     expect(toolResult.jsonrpc).toBe("2.0");
     expect(toolResult.result?.content?.[0]?.text).toBeDefined();
 
-    // Verify directory lists 'main.ts'
+    // Verify directory lists 'src'
     const textData = toolResult.result?.content?.[0]?.text ?? "";
-    expect(textData).toContain("main.ts");
+    expect(textData).toContain("src");
 
     await reader.cancel();
   });

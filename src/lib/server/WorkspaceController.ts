@@ -201,10 +201,38 @@ const wrapVerificationCommand = async (
   };
 };
 
+const findNodeModules = async (startDir: string): Promise<string | null> => {
+  let current = path.resolve(startDir);
+  while (true) {
+    const candidate = path.join(current, "node_modules");
+    try {
+      const stat = await fs.stat(candidate);
+      if (stat.isDirectory()) {
+        return candidate;
+      }
+    } catch {
+      // ignore
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return null;
+};
+
+const getSourceNodeModules = async (cwd?: string): Promise<string | null> => {
+  const startingPoint = cwd || process.cwd();
+  const found = await findNodeModules(startingPoint);
+  if (found) return found;
+  return findNodeModules(process.cwd());
+};
+
 export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
   const txFile = path.resolve(cwd || process.cwd(), ".grug-active-transaction.json");
 
-      const getProject = () =>
+  const getProject = () =>
     Effect.gen(function* () {
       if (!cwd) return null;
       let absoluteCwd = path.resolve(cwd);
@@ -361,7 +389,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* Effect.logInfo("[WorkspaceController] Patch applied cleanly via native AiderPatcher.");
       }),
 
-        runTypeCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+    runTypeCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running TypeScript compiler verification on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "typecheck_start" }));
@@ -398,7 +426,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-        runLintCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+    runLintCheck: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running project lint check verification...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_start" }));
@@ -437,7 +465,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         };
       }),
 
-        runTestSuite: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
+    runTestSuite: (_tx: GitTransaction, onStdout?: (data: string) => void, onStderr?: (data: string) => void) =>
       Effect.gen(function* () {
         yield* Effect.logInfo("[WorkspaceController] Running suite execution on task branch...");
         progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "test_start" }));
@@ -727,6 +755,19 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         }
 
         yield* Effect.logInfo(`[WorkspaceController] Git worktree added successfully at: "${worktreePath}"`);
+
+        const sourceNodeModules = yield* Effect.promise(() => getSourceNodeModules(cwd));
+        if (sourceNodeModules) {
+          const targetNodeModules = path.join(worktreePath, "node_modules");
+          yield* Effect.logInfo(`[WorkspaceController] Symlinking node_modules from "${sourceNodeModules}" to "${targetNodeModules}"`);
+          yield* Effect.tryPromise({
+            try: () => fs.symlink(sourceNodeModules, targetNodeModules, "dir"),
+            catch: (e) => new Error(`Failed to symlink node_modules: ${String(e)}`),
+          });
+        } else {
+          yield* Effect.logWarning("[WorkspaceController] No source node_modules found to symlink.");
+        }
+
         return worktreePath;
       }),
 
@@ -744,6 +785,23 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           );
         }
 
+        // Read the latest state from the worktree's active transaction file before deleting it
+        const worktreeTxFile = path.resolve(worktreePath, ".grug-active-transaction.json");
+        const worktreeStateText = yield* Effect.tryPromise({
+          try: () => fs.readFile(worktreeTxFile, "utf-8").catch(() => ""),
+          catch: () => ""
+        });
+        
+        let tasks: readonly PlanTask[] | undefined;
+        if (worktreeStateText) {
+          try {
+            const parsed = JSON.parse(worktreeStateText);
+            tasks = parsed.tasks;
+          } catch {
+            // ignore
+          }
+        }
+
         const removeCmd = yield* runCommand(["git", "worktree", "remove", "--force", worktreePath], cwd);
         if (removeCmd.exitCode !== 0) {
           yield* Effect.logWarning(`[WorkspaceController] git worktree remove command returned non-zero code: ${removeCmd.stderr}`);
@@ -758,6 +816,9 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
         // Reset the main repository's working tree to the updated branch HEAD!
         yield* runCommand(["git", "reset", "--hard", `refs/heads/${tx.ephemeralBranch}`], cwd);
+
+        // Synchronize the finalized worktree state back to the main workspace transaction file
+        yield* updateStateFile(tx, tasks);
 
         yield* Effect.logInfo(`[WorkspaceController] Git worktree directory purged cleanly.`);
       }),

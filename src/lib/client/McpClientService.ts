@@ -1,3 +1,4 @@
+// File: src/lib/client/McpClientService.ts
 import { Context, Effect, Layer } from "effect";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -35,9 +36,9 @@ export const McpClientLive = Layer.effect(
       { capabilities: {} }
     );
 
-    let isConnected = false;
+    let connectionPromise: Promise<void> | null = null;
 
-        const getSseUrl = (): URL => {
+    const getSseUrl = (): URL => {
       if (typeof window !== "undefined") {
         const host = window.location.hostname;
         if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
@@ -51,26 +52,40 @@ export const McpClientLive = Layer.effect(
       return new URL("/api/mcp/sse", window.location.origin);
     };
 
-        const connect = () =>
+    const connect = () =>
       Effect.gen(function* () {
-        if (isConnected) return;
+        if (connectionPromise) {
+          yield* clientLog("debug", "[McpClientService] Awaiting existing connection promise...");
+          yield* Effect.tryPromise({
+            try: () => connectionPromise!,
+            catch: (e) => new Error(`MCP Client SSE connection failed (awaited): ${String(e)}`),
+          });
+          return;
+        }
+
         yield* clientLog("info", "[McpClientService] Connecting to sidecar daemon over SSE...");
-        
         const sseUrl = getSseUrl();
         yield* clientLog("debug", `[McpClientService] Connection URL: ${sseUrl.toString()}`);
-        
-        const transport = new SSEClientTransport(sseUrl);
+
+        connectionPromise = new Promise<void>((resolve, reject) => {
+          const transport = new SSEClientTransport(sseUrl);
+          client.connect(transport)
+            .then(() => resolve())
+            .catch((err) => {
+              connectionPromise = null; // Clear the cached promise so retry works
+              reject(err);
+            });
+        });
 
         yield* Effect.tryPromise({
-          try: () => client.connect(transport),
+          try: () => connectionPromise!,
           catch: (e) => new Error(`MCP Client SSE connection failed: ${String(e)}`),
         });
 
-        isConnected = true;
         yield* clientLog("info", "[McpClientService] MCP Client connected and initialized.");
       });
 
-                const callTool = (name: string, args: Record<string, unknown>) =>
+    const callTool = (name: string, args: Record<string, unknown>) =>
       Effect.gen(function* () {
         yield* connect();
 

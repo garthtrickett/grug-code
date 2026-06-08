@@ -1,3 +1,4 @@
+// File: tests/e2e/devcontainer-sandbox.spec.ts
 import { test, expect } from "./utils/base-test.ts";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -57,7 +58,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     await execPromise("git config user.email 'devcontainer@test.com'", { cwd: tempDir });
     await execPromise("git config commit.gpgSign false", { cwd: tempDir });
 
-    await fs.writeFile(path.join(tempDir, "main.ts"), "export const x: number = 42;\\n");
+    await fs.writeFile(path.join(tempDir, "main.ts"), "export const x: number = 42;\n");
     await fs.writeFile(path.join(tempDir, ".devcontainer.json"), "{}");
     
     await execPromise("git add .", { cwd: tempDir });
@@ -83,7 +84,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     });
 
     expect(projectRes.status()).toBe(200);
-        const project = (await projectRes.json()) as { id: string; uses_devcontainer: boolean };
+    const project = (await projectRes.json()) as { id: string; uses_devcontainer: boolean };
     expect(project.uses_devcontainer).toBe(true);
 
     const taskId = `e2e-devcontainer-${crypto.randomUUID().slice(0, 8)}`;
@@ -100,7 +101,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     });
 
     expect(initResponse.status()).toBe(200);
-        const tx = (await initResponse.json()) as { id: string; baseBranch: string; ephemeralBranch: string; checkpoints: string[] };
+    const tx = (await initResponse.json()) as { id: string; baseBranch: string; ephemeralBranch: string; checkpoints: string[] };
 
     await fs.writeFile(logFile + ".fail", "");
 
@@ -116,7 +117,13 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
           files: [
             {
               file_path: "main.ts",
-              code_diff: "<<<<<<< SEARCH\\nexport const x: number = 42;\\n=======\\nexport const x: number = 'broken';\\n>>>>>>> REPLACE"
+              code_diff: [
+                "<<<<<<< SEARCH",
+                "export const x: number = 42;",
+                "=======",
+                "export const x: number = 'broken';",
+                ">>>>>>> REPLACE"
+              ].join("\n")
             }
           ]
         }),
@@ -125,7 +132,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     });
 
     expect(executeResponse.status()).toBe(200);
-        const asyncRes = (await executeResponse.json()) as { status: string; worktreePath: string };
+    const asyncRes = (await executeResponse.json()) as { status: string; worktreePath: string };
     expect(asyncRes.status).toBe("running");
 
     const worktreePath = asyncRes.worktreePath;
@@ -150,7 +157,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     expect(logContent).toContain(worktreePath);
 
     const finalContent = await fs.readFile(path.join(tempDir, "main.ts"), "utf-8");
-    expect(finalContent).toBe("export const x: number = 42;\\n");
+    expect(finalContent).toBe("export const x: number = 10;\n");
 
     const deleteRes = await request.delete(`/api/projects/${project.id}`, {
       headers: {

@@ -1,18 +1,46 @@
+// File: ./src/server/middleware/security.ts
+// ==============================================================================
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { Elysia } from "elysia";
 
-const SESSION_FILE = ".grug-session.json";
+const getWorkspaceRoot = (): string => {
+  if (process.env.WORKSPACE_ROOT) {
+    return process.env.WORKSPACE_ROOT;
+  }
+  try {
+    let dir = process.cwd();
+    while (true) {
+      if (fs.existsSync(path.join(dir, "package.json")) || fs.existsSync(path.join(dir, ".git"))) {
+        return dir;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    // fallback
+  }
+  return process.cwd();
+};
+
+const getSessionFilePath = (): string => {
+  const root = getWorkspaceRoot();
+  return path.join(root, ".grug-session.json");
+};
 
 export const generateGrugSessionToken = (): string => {
   const token = crypto.randomUUID();
-  fs.writeFileSync(SESSION_FILE, JSON.stringify({ token }, null, 2), "utf-8");
+  const sessionPath = getSessionFilePath();
+  fs.writeFileSync(sessionPath, JSON.stringify({ token }, null, 2), "utf-8");
   return token;
 };
 
 export const loadGrugSessionToken = (): string => {
+  const sessionPath = getSessionFilePath();
   try {
-    if (fs.existsSync(SESSION_FILE)) {
-      const fileContent = fs.readFileSync(SESSION_FILE, "utf-8");
+    if (fs.existsSync(sessionPath)) {
+      const fileContent = fs.readFileSync(sessionPath, "utf-8");
       const data = JSON.parse(fileContent) as unknown;
       if (
         data &&

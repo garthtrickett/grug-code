@@ -1,3 +1,5 @@
+// File: ./scripts/build-sidecar.js
+// ==============================================================================
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -17,13 +19,18 @@ if (!fs.existsSync(binDir)) {
   fs.mkdirSync(binDir, { recursive: true });
 }
 
-// Compile the daemon binary using Bun
-execSync("bun build --compile src/daemon.ts --outfile dist/grug-daemon", {
-  cwd: "grug-cli-core",
+const distDir = path.resolve("dist");
+if (!fs.existsSync(distDir)) {
+  fs.mkdirSync(distDir, { recursive: true });
+}
+
+// Compile the main server binary using Bun (targeting the correct Elysia entry-point)
+execSync("bun build --compile src/server/index.ts --outfile dist/grug-daemon", {
+  cwd: ".",
   stdio: "inherit"
 });
 
-const source = path.resolve("grug-cli-core/dist/grug-daemon");
+const source = path.resolve("dist/grug-daemon");
 if (!fs.existsSync(source)) {
   throw new Error(`Compiled daemon binary not found at: ${source}`);
 }

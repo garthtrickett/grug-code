@@ -1,3 +1,4 @@
+// File: src/lib/server/mcp/McpServer.ts
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -55,7 +56,9 @@ export const broadcastProgress = (progressToken: string, message: string, progre
   };
   for (const transport of mcpTransports.values()) {
     try {
-      void transport.send(notification);
+      transport.send(notification).catch((e) => {
+        console.error("[McpServer] Async error sending progress notification:", e);
+      });
     } catch (e) {
       console.error("[McpServer] Failed to send progress notification to transport:", e);
     }
@@ -264,21 +267,21 @@ mcpServer.tool(
               failedSearchBlock: error.failedSearchBlock,
               proposedReplacement: error.proposedReplacement,
               actualContextSnippet: error.actualContextSnippet,
-                })
-              }],
-              isError: true,
-            };
-          }
-          return {
-            content: [{ type: "text", text: `Error: ${error.message}` }],
-            isError: true,
-          };
-        }
-        return {
-          content: [{ type: "text", text: "Patch applied successfully." }],
+            })
+          }],
+          isError: true,
         };
       }
-    );
+      return {
+        content: [{ type: "text", text: `Error: ${error.message}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: "Patch applied successfully." }],
+    };
+  }
+);
 
 mcpServer.tool(
   "list_directories",
@@ -459,7 +462,7 @@ mcpServer.tool(
       };
     }
 
-        try {
+    try {
       const content = await fs.readFile(resolvedPath, "utf-8");
       return {
         content: [{ type: "text", text: content }],
@@ -587,7 +590,7 @@ mcpServer.tool(
     }));
     const effect = Effect.flatMap(CorrectionLoop, (loop) =>
       loop.runStep({
-        tx,
+        tx: mappedTasks ? tx : tx, // Keep parameters aligned
         targetFiles,
         instructions,
         cwd,
