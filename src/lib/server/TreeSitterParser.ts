@@ -1,9 +1,31 @@
 import Parser from "web-tree-sitter";
 import { Effect, Context, Layer } from "effect";
 import * as path from "node:path";
+import * as fsSync from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+
+const findWasmPath = (packageName: string, subPath: string, fallbackRelative: string): string => {
+  const currentDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
+  const pathsToTry = [
+    path.resolve(process.cwd(), "node_modules", packageName, subPath),
+    path.resolve(process.cwd(), "grug-cli-core", "node_modules", packageName, subPath),
+    path.resolve(currentDir, fallbackRelative),
+  ];
+
+  for (const p of pathsToTry) {
+    if (fsSync.existsSync(p)) {
+      return p;
+    }
+  }
+
+  try {
+    return require.resolve(path.join(packageName, subPath));
+  } catch {
+    return path.resolve(process.cwd(), "node_modules", packageName, subPath);
+  }
+};
 
 export class TreeSitterParser extends Context.Tag("TreeSitterParser")<
   TreeSitterParser,
@@ -20,36 +42,20 @@ export const TreeSitterParserLive = Layer.effect(
 
     const currentDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 
-    yield* Effect.tryPromise({
+        const webTreeSitterWasmPath = findWasmPath("web-tree-sitter", "tree-sitter.wasm", "../../../node_modules/web-tree-sitter/tree-sitter.wasm");
+    yield* Effect.logInfo(`[TreeSitterParser] Loading web-tree-sitter WASM from path: ${webTreeSitterWasmPath}`);
+
+    yield* Effect.tryPromise({ 
       try: () =>
         Parser.init({
-          locateFile(scriptName: string) {
-            try {
-              const moduleDir = path.dirname(require.resolve("web-tree-sitter"));
-              return path.resolve(moduleDir, scriptName);
-            } catch {
-              return path.resolve(currentDir, "../../../node_modules/web-tree-sitter", scriptName);
-            }
+          locateFile() {
+            return webTreeSitterWasmPath;
           },
         }),
-      catch: (e) => new Error(`Failed to initialize web-tree-sitter: ${String(e)}`),
+      catch: (e) => new Error(`Failed to initialize web-tree-sitter from ${webTreeSitterWasmPath}: ${String(e)}`),
     });
 
-    const tsWasmPath = yield* Effect.sync(() => {
-      try {
-        return require.resolve("tree-sitter-wasms/out/tree-sitter-typescript.wasm");
-      } catch {
-        try {
-          const wasmDir = path.dirname(require.resolve("tree-sitter-wasms"));
-          return path.resolve(wasmDir, "out/tree-sitter-typescript.wasm");
-        } catch {
-          return path.resolve(
-            currentDir,
-            "../../../node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm"
-          );
-        }
-      }
-    });
+    const tsWasmPath = findWasmPath("tree-sitter-wasms", "out/tree-sitter-typescript.wasm", "../../../node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm");
 
     yield* Effect.logInfo(`[TreeSitterParser] Loading TypeScript parser from path: ${tsWasmPath}`);
 
