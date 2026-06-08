@@ -1,14 +1,3 @@
-import { exec } from "node:child_process";
-import { EventEmitter } from "node:events";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { Effect } from "effect";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import { promisify } from "node:util";
-import { makeWorkspaceController } from "./WorkspaceController";
-import { db } from "../../db/client";
-import type { ProjectId } from "../../types";
-
 const { mockSpawn, state } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
   state: { useMockSpawn: false }
@@ -26,6 +15,17 @@ vi.mock("node:child_process", async (importOriginal) => {
     },
   };
 });
+
+import { exec } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { Effect } from "effect";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { promisify } from "node:util";
+import { makeWorkspaceController } from "./WorkspaceController";
+import { db } from "../../db/client";
+import type { ProjectId } from "../../types";
 
 const execPromise = promisify(exec);
 
