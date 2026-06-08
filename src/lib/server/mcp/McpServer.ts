@@ -9,6 +9,12 @@ import * as path from "node:path";
 import { serverRuntime } from "../server-runtime.ts";
 import { TreeSitterParserLive } from "../TreeSitterParser.ts";
 import { PatchApplicationError } from "../AiderPatcher.ts";
+import { ResearchLoop, ResearchLoopLive } from "../../../features/agent/ResearchLoop.ts";
+import { ProjectStructureMapper, ProjectStructureMapperLive } from "../../../features/agent/ProjectStructureMapper.ts";
+import { CorrectionLoop, CorrectionLoopLive } from "../../../features/agent/CorrectionLoop.ts";
+import { AiServiceLive } from "../AiService.ts";
+import { SurgicalRouterLive } from "../SurgicalRouter.ts";
+import { TokenEstimatorLive } from "../TokenEstimator.ts";
 
 export interface IMcpService {
   readonly start: () => Effect.Effect<void, Error>;
@@ -382,7 +388,7 @@ mcpServer.tool(
       };
     }
 
-    try {
+        try {
       const content = await fs.readFile(resolvedPath, "utf-8");
       return {
         content: [{ type: "text", text: content }],
@@ -394,6 +400,131 @@ mcpServer.tool(
         isError: true,
       };
     }
+  }
+);
+
+mcpServer.tool(
+  "grug_skeletal_research",
+  "Executes the Stage 1 skeletal pre-planning research loop to scan candidate signatures and build task checklists.",
+  {
+    userPrompt: z.string().describe("User prompt describing the desired code change or feature implementation"),
+    cwd: z.string().optional().describe("Root directory path of the active project workspace"),
+    provider: z.enum(["gemini", "openai", "deepseek"]).optional().default("openai").describe("LLM provider to execute the planning loop"),
+    mode: z.enum(["standard", "discussion"]).optional().default("standard").describe("Select standard autopilot planning or interactive advisory discussion mode"),
+    history: z.array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        text: z.string()
+      })
+    ).optional().default([]).describe("Conversation Turn History array used in advisory discussion mode")
+  },
+  async ({ userPrompt, cwd, provider, mode, history }) => {
+    const effect = Effect.gen(function* () {
+      const mapper = yield* ProjectStructureMapper;
+      const loop = yield* ResearchLoop;
+      const projectStructure = yield* mapper.mapProject({ cwd });
+      return yield* loop.run({
+        userPrompt,
+        projectStructure,
+        cwd,
+        provider,
+        mode,
+        history,
+      });
+    }).pipe(
+      Effect.provide(ResearchLoopLive),
+      Effect.provide(ProjectStructureMapperLive),
+      Effect.provide(AiServiceLive),
+      Effect.provide(TreeSitterParserLive),
+      Effect.provide(SurgicalRouterLive),
+      Effect.provide(TokenEstimatorLive)
+    );
+
+    const result = await serverRuntime.runPromise(Effect.either(effect));
+    if (result._tag === "Left") {
+      return {
+        content: [{ type: "text", text: `Error: ${result.left.message}` }],
+        isError: true,
+      };
+    } 
+    return {
+      content: [{ type: "text", text: JSON.stringify(result.right) }],
+    };
+  }
+);
+
+mcpServer.tool(
+  "execute_step",
+  "Executes a planned implementation step, applying edits and verifying them with self-correction.",
+  {
+    tx: z.object(gitTransactionZodShape).describe("The active Git transaction details"),
+    targetFiles: z.array(z.string()).describe("The list of files targeted by this step"),
+    instructions: z.string().describe("The developer instructions or descriptions for this step"),
+    cwd: z.string().optional().describe("Working directory for the workspace repository"),
+    currentTaskId: z.string().optional().describe("Optional task ID to update the step status"),
+    tasks: z.array(
+      z.object({
+        id: z.string(),
+        description: z.string(),
+        targetFiles: z.array(z.string()),
+        status: z.enum(["pending", "running", "completed", "failed"]),
+        developerNotes: z.string().nullable()
+      })
+    ).optional().describe("The complete list of tasks in the active plan")
+  },
+  async ({ tx, targetFiles, instructions, cwd, currentTaskId, tasks }) => {
+    const mappedTasks = tasks?.map((t) => ({
+      ...t,
+      developerNotes: t.developerNotes ?? null,
+    }));
+    const effect = Effect.flatMap(CorrectionLoop, (loop) =>
+      loop.runStep({
+        tx,
+        targetFiles,
+        instructions,
+        cwd,
+        tasks: mappedTasks,
+        currentTaskId
+      })
+    ).pipe(
+      Effect.provide(CorrectionLoopLive),
+      Effect.provide(AiServiceLive),
+      Effect.provide(TreeSitterParserLive)
+    );
+
+    const result = await serverRuntime.runPromise(Effect.either(effect));
+    if (result._tag === "Left") {
+      return {
+        content: [{ type: "text", text: `Error: ${result.left.message}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(result.right) }],
+    };
+  }
+);
+
+mcpServer.tool(
+  "git_get_status",
+  "Read the active transaction state from disk.",
+  {
+    cwd: z.string().optional().describe("Working directory of the workspace")
+  },
+  async ({ cwd }) => {
+    const controller = makeWorkspaceController(cwd);
+    const result = await serverRuntime.runPromise(
+      Effect.either(controller.readTransactionState())
+    );
+    if (result._tag === "Left") {
+      return {
+        content: [{ type: "text", text: `Error: ${result.left.message}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(result.right) }],
+    };
   }
 );
 

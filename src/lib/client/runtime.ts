@@ -1,9 +1,10 @@
 import { Effect, Layer, Runtime, Scope, Exit } from "effect";
 import { LocationLive, LocationService } from "./LocationService";
+import { McpClientLive, McpClientService } from "./McpClientService";
 
-export type BaseClientContext = LocationService;
+export type BaseClientContext = LocationService | McpClientService;
 
-export const BaseClientLive = Layer.mergeAll(LocationLive);
+export const BaseClientLive = Layer.mergeAll(LocationLive, McpClientLive);
 
 const appScope = Effect.runSync(Scope.make());
 
