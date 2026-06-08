@@ -61,8 +61,11 @@ export const clientLog = (
         url: window.location.href,
       };
 
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+      const logUrl = apiBase ? `${apiBase}/api/log` : "/api/log";
+
       const sendRequest = () =>
-        fetch("/api/log", {
+        fetch(logUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -74,5 +77,5 @@ export const clientLog = (
       });
     });
 
-    yield* Effect.fork(forwardEffect);
+    yield* forwardEffect;
   });

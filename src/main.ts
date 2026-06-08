@@ -18,7 +18,9 @@ if (typeof window !== "undefined") {
       data: stack ? { stack: String(stack) } : {},
       url: window.location.href,
     };
-    fetch("/api/log", {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+    const logUrl = apiBase ? `${apiBase}/api/log` : "/api/log";
+    fetch(logUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -35,7 +37,9 @@ if (typeof window !== "undefined") {
       data: stack ? { stack: String(stack) } : {},
       url: window.location.href,
     };
-    fetch("/api/log", {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+    const logUrl = apiBase ? `${apiBase}/api/log` : "/api/log";
+    fetch(logUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -51,7 +55,7 @@ const bootstrapApp = Effect.gen(function* () {
 
   yield* clientLog("info", "[Main] Initiating Grug Code bootstrap sequence...");
 
-    // Hydrate User Preferences storage from localStorage
+  // Hydrate User Preferences storage from localStorage
   yield* clientLog("info", "[Main] Hydrating User Preferences storage...");
   const { userPreferencesStore } = yield* Effect.promise(() => import("./lib/client/stores/userPreferencesStore.ts"));
   yield* userPreferencesStore.load();

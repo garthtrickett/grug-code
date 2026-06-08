@@ -100,7 +100,7 @@ export const securityMiddleware = (app: Elysia) =>
     // Double-gated loopback check to protect workspace from DNS rebinding and cross-site scripting
     if (isStateChanging) {
       if (!isLoopbackHost(host) || !isLoopbackOrigin(origin)) {
-        console.warn(`[Security] Blocked non-loopback state-changing request on method ${method}. Host: ${host}, Origin: ${origin}`);
+        console.error(`[Security Middleware] ❌ Blocked non-loopback state-changing request on method ${method}. Host: ${host}, Origin: ${origin}`);
         set.status = 403;
         return { error: "Forbidden: External request origin or host detected on sensitive loopback operations" };
       }
@@ -108,7 +108,11 @@ export const securityMiddleware = (app: Elysia) =>
 
     const token = request.headers.get("X-Grug-Token");
     if (token !== activeToken) {
+      console.error(`[Security Middleware] ❌ 401 Unauthorized: Invalid or missing Grug Token on ${method} ${request.url}`);
+      console.error(`[Security Middleware] Expected token: "${activeToken}" | Received: "${token}"`);
       set.status = 401;
       return { error: "Unauthorized: Invalid or missing Grug Token" };
+    } else {
+      console.error(`[Security Middleware] ✅ Token approved on ${method} ${request.url}`);
     }
   });

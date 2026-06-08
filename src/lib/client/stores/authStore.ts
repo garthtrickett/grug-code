@@ -40,12 +40,15 @@ export const initAuth = () => {
     yield* clientLog("info", "[AuthStore] Restoring session from storage...");
 
     const fetchResult = yield* Effect.tryPromise({
-      try: () =>
-        fetch("/api/auth/me", {
+      try: () => {
+        const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+        const url = apiBase ? `${apiBase}/api/auth/me` : "/api/auth/me";
+        return fetch(url, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }),
+        });
+      },
       catch: (e) => new Error(`Authorization check failed: ${String(e)}`),
     }).pipe(Effect.either);
 
@@ -86,12 +89,15 @@ export const login = (email: string, password: string) => {
     yield* clientLog("info", `[AuthStore] Dispatching login request: ${email}`);
 
     const response = yield* Effect.tryPromise({
-      try: () =>
-        fetch("/api/auth/login", {
+      try: () => {
+        const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+        const url = apiBase ? `${apiBase}/api/auth/login` : "/api/auth/login";
+        return fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
-        }),
+        });
+      },
       catch: (e) => new Error(`Auth request connection failed: ${String(e)}`),
     });
 
@@ -136,12 +142,15 @@ export const signup = (email: string, password: string) => {
     yield* clientLog("info", `[AuthStore] Dispatching signup request: ${email}`);
 
     const response = yield* Effect.tryPromise({
-      try: () =>
-        fetch("/api/auth/signup", {
+      try: () => {
+        const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+        const url = apiBase ? `${apiBase}/api/auth/signup` : "/api/auth/signup";
+        return fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
-        }),
+        });
+      },
       catch: (e) => new Error(`Signup connection failed: ${String(e)}`),
     });
 

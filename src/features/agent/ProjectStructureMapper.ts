@@ -25,6 +25,7 @@ export const ProjectStructureMapperLive = Layer.succeed(
         const ignoredDirs = new Set([
           "node_modules",
           "dist",
+          "dev-dist",
           "build",
           "out",
           "coverage",
@@ -36,7 +37,12 @@ export const ProjectStructureMapperLive = Layer.succeed(
           ".vscode",
           ".venv",
           "test-results",
-          "playwright-report"
+          "playwright-report",
+          ".helix",
+          ".cache",
+          "tmp",
+          "bin",
+          "obj"
         ]);
 
         const ignoredExtensions = new Set([
@@ -95,7 +101,7 @@ export const ProjectStructureMapperLive = Layer.succeed(
         filePaths.sort();
 
         // Build sorted context-efficient flat JSON array
-                const formattedPayload = JSON.stringify(filePaths, null, 2);
+        const formattedPayload = JSON.stringify(filePaths, null, 2);
         yield* Effect.logInfo(`[ProjectStructureMapper] Map compiled successfully. Indexed ${filePaths.length} files.`);
 
         return formattedPayload;
@@ -107,7 +113,7 @@ export const ProjectStructureMapperLive = Layer.succeed(
         const path1 = path.join(rootDir, ".devcontainer.json");
         const path2 = path.join(rootDir, ".devcontainer", "devcontainer.json");
 
-                const exists = (filePath: string) =>
+        const exists = (filePath: string) =>
           Effect.tryPromise({
             try: () => fs.stat(filePath).then(() => true).catch(() => false),
             catch: (e) => new Error(String(e)),

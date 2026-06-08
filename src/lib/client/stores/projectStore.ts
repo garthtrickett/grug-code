@@ -34,11 +34,14 @@ export const projectStore = {
     Effect.gen(function* () {
       yield* clientLog("info", "[projectStore] Fetching registered projects...");
       const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/projects", {
+        try: () => {
+          const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+          const url = apiBase ? `${apiBase}/api/projects` : "/api/projects";
+          return fetch(url, {
             method: "GET",
             headers: getHeaders(),
-          }),
+          });
+        },
         catch: (e) => new Error(`Failed to fetch projects: ${String(e)}`),
       });
 
@@ -69,12 +72,15 @@ export const projectStore = {
     Effect.gen(function* () {
       yield* clientLog("info", `[projectStore] Creating project: ${data.name}`);
       const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch("/api/projects", {
+        try: () => {
+          const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+          const url = apiBase ? `${apiBase}/api/projects` : "/api/projects";
+          return fetch(url, {
             method: "POST",
             headers: getHeaders(),
             body: JSON.stringify(data),
-          }),
+          });
+        },
         catch: (e) => new Error(`Failed to create project: ${String(e)}`),
       });
 
@@ -100,12 +106,15 @@ export const projectStore = {
     Effect.gen(function* () {
       yield* clientLog("info", `[projectStore] Updating project: ${id}`);
       const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch(`/api/projects/${id}`, {
+        try: () => {
+          const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+          const url = apiBase ? `${apiBase}/api/projects/${id}` : `/api/projects/${id}`;
+          return fetch(url, {
             method: "PUT",
             headers: getHeaders(),
             body: JSON.stringify(data),
-          }),
+          });
+        },
         catch: (e) => new Error(`Failed to update project: ${String(e)}`),
       });
 
@@ -135,11 +144,14 @@ export const projectStore = {
     Effect.gen(function* () {
       yield* clientLog("warn", `[projectStore] Deleting project: ${id}`);
       const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch(`/api/projects/${id}`, {
+        try: () => {
+          const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+          const url = apiBase ? `${apiBase}/api/projects/${id}` : `/api/projects/${id}`;
+          return fetch(url, {
             method: "DELETE",
             headers: getHeaders(),
-          }),
+          });
+        },
         catch: (e) => new Error(`Failed to delete project: ${String(e)}`),
       });
 
@@ -157,18 +169,27 @@ export const projectStore = {
   selectProject: (project: Project | null) =>
     Effect.gen(function* () {
       activeProjectSignal.value = project;
-      const { selectedScopeSignal } = yield* Effect.promise(() => import("./directoryStore"));
-      selectedScopeSignal.value = "";
+      
+      const resetScope = Effect.gen(function* () {
+        const { selectedScopeSignal } = yield* Effect.promise(() => import("./directoryStore"));
+        selectedScopeSignal.value = "";
+      }).pipe(Effect.catchAll(() => Effect.void));
+
+      yield* resetScope;
 
       if (project) {
         localStorage.setItem("grug-cwd", project.root_path);
         yield* clientLog("info", `[projectStore] Project selected: ${project.name} (CWD: ${project.root_path})`);
         
-        const { fetchWorkspaceDirectories } = yield* Effect.promise(() => import("./directoryStore"));
-        yield* fetchWorkspaceDirectories(project.root_path).pipe(Effect.catchAll(() => Effect.void));
+        const runSetup = Effect.gen(function* () {
+          const { fetchWorkspaceDirectories } = yield* Effect.promise(() => import("./directoryStore"));
+          yield* fetchWorkspaceDirectories(project.root_path).pipe(Effect.catchAll(() => Effect.void));
 
-        const { taskStore } = yield* Effect.promise(() => import("./taskStore"));
-        yield* taskStore.reconcileActiveTransaction(project.root_path).pipe(Effect.catchAll(() => Effect.void));
+          const { taskStore } = yield* Effect.promise(() => import("./taskStore"));
+          yield* taskStore.reconcileActiveTransaction(project.root_path).pipe(Effect.catchAll(() => Effect.void));
+        });
+
+        yield* runSetup.pipe(Effect.catchAll(() => Effect.void));
       } else {
         localStorage.removeItem("grug-cwd");
         yield* clientLog("info", "[projectStore] Project selection cleared.");

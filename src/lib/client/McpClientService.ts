@@ -38,18 +38,18 @@ export const McpClientLive = Layer.effect(
 
     let connectionPromise: Promise<void> | null = null;
 
-    const getSseUrl = (): URL => {
+        const getSseUrl = (): URL => {
+      // Revert to window.location.origin during development to route through Vite same-origin proxy (port 3000)
+      // This completely bypasses Mixed Content security blocks in browser rendering engines.
       if (typeof window !== "undefined") {
         const host = window.location.hostname;
-        if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+        const isTauri = typeof (window as any).__TAURI__ !== "undefined" || window.location.protocol === "tauri:" || window.location.origin.includes("tauri");
+        if (!isTauri && (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]")) {
           return new URL("/api/mcp/sse", window.location.origin);
         }
       }
       const base = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:42069";
-      if (base.startsWith("http")) {
-        return new URL("/api/mcp/sse", base);
-      }
-      return new URL("/api/mcp/sse", window.location.origin);
+      return new URL("/api/mcp/sse", base);
     };
 
     const connect = () =>

@@ -1,3 +1,7 @@
+// Disable JIT compilation at the absolute process entry point to prevent SIGTRAP debugger freezes on NixOS
+process.env.BUN_JIT = "0";
+process.env.JSC_useJIT = "false";
+
 import { Elysia, Context, t } from "elysia";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 
@@ -13,17 +17,28 @@ import { workspaceRoutes } from "./routes/workspace.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { getActiveToken } from "./middleware/security.ts";
 
-import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr, mcpTransports } from "../lib/server/mcp/McpServer.ts";
+import { McpService, McpServiceLive, McpLoggerLive, redirectConsoleLogToStderr, mcpTransports as baseTransports } from "../lib/server/mcp/McpServer.ts";
 import { Effect } from "effect";
 
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 
-export class ElysiaMockResponse extends ServerResponse {
-  private controller: ReadableStreamDefaultController<string>;
+// Safe global-gated singleton to prevent duplicate Map instances across hot-reloads/bundling splits
+const globalForMcp = globalThis as unknown as {
+  mcpTransports?: Map<string, SSEServerTransport>;
+};
 
-  constructor(controller: ReadableStreamDefaultController<string>) {
+export const mcpTransports = globalForMcp.mcpTransports ?? baseTransports;
+
+if (process.env.NODE_ENV !== "production") {
+  globalForMcp.mcpTransports = mcpTransports;
+}
+
+export class ElysiaMockResponse extends ServerResponse {
+  private controller: ReadableStreamDefaultController<Uint8Array>;
+
+  constructor(controller: ReadableStreamDefaultController<Uint8Array>) {
     const socket = new Socket();
     const req = new IncomingMessage(socket);
     super(req);
@@ -42,7 +57,8 @@ export class ElysiaMockResponse extends ServerResponse {
         ? new TextDecoder().decode(chunk) 
         : String(chunk);
     try {
-      this.controller.enqueue(text);
+      const encoder = new TextEncoder();
+      this.controller.enqueue(encoder.encode(text));
     } catch {}
     return true;
   }
@@ -64,22 +80,45 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
     set.headers["Content-Type"] = "text/event-stream";
     set.headers["Cache-Control"] = "no-cache";
     set.headers["Connection"] = "keep-alive";
+    set.headers["X-Accel-Buffering"] = "no"; // Prevent connection buffering under proxy networks
 
     let activeTransport: SSEServerTransport | null = null;
 
-    const stream = new ReadableStream({
+    const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const mockRes = new ElysiaMockResponse(controller as ReadableStreamDefaultController<string>);
+        const mockRes = new ElysiaMockResponse(controller);
         const transport = new SSEServerTransport("/api/mcp/messages", mockRes);
         
+        console.error(`[McpServer] 🟢 New SSE connection established. SessionId: "${transport.sessionId}"`);
+        
+        // Setup a safe thread-safe request registry directly on the transport instance
+        const pendingRequests = new Map<string, (msg: unknown) => void>();
+        (transport as any)._pendingRequests = pendingRequests;
+
+        const originalSend = transport.send.bind(transport);
+        transport.send = async (message: any) => {
+          if (message && typeof message === "object" && "id" in message) {
+            const reqId = String(message.id);
+            const resolver = pendingRequests.get(reqId);
+            if (resolver) {
+              resolver(message);
+              pendingRequests.delete(reqId);
+            }
+          }
+          return originalSend(message);
+        };
+
         mcpTransports.set(transport.sessionId, transport);
         activeTransport = transport;
 
-        const { mcpServer } = await import("../lib/server/mcp/McpServer.ts");
-        await mcpServer.connect(transport);
+        // Instantiate a fresh McpServer per SSE session to support multiple simultaneous connections
+        const { createMcpServer } = await import("../lib/server/mcp/McpServer.ts");
+        const mcpServerInstance = createMcpServer();
+        await mcpServerInstance.connect(transport);
       },
       cancel() {
         if (activeTransport) {
+          console.error(`[McpServer] 🔴 SSE stream cancelled/closed prematurely for SessionId: "${activeTransport.sessionId}"`);
           try {
             mcpTransports.delete(activeTransport.sessionId);
             void activeTransport.close();
@@ -91,13 +130,17 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Pragma": "no-cache"
       }
     });
   })
   .post("/messages", async ({ query, body, set }) => {
     const sessionId = query.sessionId;
+    console.error(`[McpServer] 📩 Received POST to /messages with sessionId: "${sessionId}"`);
+    
     if (!sessionId) {
       set.status = 400;
       return { error: "Missing sessionId" };
@@ -105,8 +148,25 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
 
     const transport = mcpTransports.get(sessionId);
     if (!transport) {
+      console.error(`[McpServer] ❌ Session not found for sessionId: "${sessionId}". Active sessions:`, Array.from(mcpTransports.keys()));
       set.status = 404;
       return { error: "Session not found" };
+    }
+
+    const hasId = body && typeof body === "object" && "id" in body;
+    const reqId = hasId ? String((body as any).id) : null;
+
+    let resolveMessage: ((msg: unknown) => void) | null = null;
+    let messagePromise: Promise<unknown> | null = null;
+
+    if (reqId) {
+      messagePromise = new Promise<unknown>((resolve) => {
+        resolveMessage = resolve;
+      });
+      const pendingMap = (transport as any)._pendingRequests;
+      if (pendingMap) {
+        pendingMap.set(reqId, resolveMessage);
+      }
     }
 
     let responseBody = "";
@@ -132,54 +192,29 @@ export const mcpRoutes = new Elysia({ prefix: "/api/mcp" })
       },
     } as unknown as IncomingMessage;
 
-    let lastSentMessage: unknown = null;
-    let resolveMessage: ((msg: unknown) => void) | null = null;
-    const messagePromise = new Promise<unknown>((resolve) => {
-      resolveMessage = resolve;
-    });
-
-    const originalSend = transport.send ? transport.send.bind(transport) : undefined;
-    if (originalSend) {
-      transport.send = async (message: unknown) => {
-        lastSentMessage = message;
-        if (resolveMessage) {
-          resolveMessage(message);
-        }
-        return originalSend(message as Parameters<SSEServerTransport['send']>[0]);
-      };
-    }
-    
     try {
-      console.info(`[mcpRoutes /messages] Routing message to transport.handlePostMessage for session: ${sessionId}`);
       await transport.handlePostMessage(mockReq, mockRes, body);
-      console.info(`[mcpRoutes /messages] handlePostMessage finished. Status: ${statusCode}`);
       
-      // Dynamically scale timeout depending on whether it is a JSON-RPC request (has "id") or notification
-      const hasId = body && typeof body === "object" && "id" in body;
-      const timeoutDuration = hasId ? 120000 : 50;
-
-      if (!lastSentMessage) {
-        await Promise.race([
+      if (messagePromise) {
+        const timeoutDuration = 120000;
+        const responseMessage = await Promise.race([
           messagePromise,
           new Promise((resolve) => setTimeout(resolve, timeoutDuration))
         ]);
+
+        if (responseMessage) {
+          set.status = 200;
+          return responseMessage;
+        }
       }
     } catch (err) {
-      console.error(`[mcpRoutes /messages] Critical error in handlePostMessage:`, err);
-      if (originalSend) {
-        transport.send = originalSend;
+      console.error(`[McpServer] ❌ Error in handlePostMessage:`, err);
+      const pendingMap = (transport as any)._pendingRequests;
+      if (pendingMap && reqId) {
+        pendingMap.delete(reqId);
       }
       set.status = 500;
       return { error: err instanceof Error ? err.message : String(err) };
-    } finally {
-      if (originalSend) {
-        transport.send = originalSend;
-      }
-    }
-
-    if (lastSentMessage) {
-      set.status = 200;
-      return lastSentMessage;
     }
 
     set.status = statusCode === 202 ? 200 : statusCode;
@@ -223,9 +258,24 @@ if (isMcpMode) {
   });
 }
 
+// Proactively pre-warm lazy server layers (Tree-Sitter and WASM modules) in the background on startup
+void import("../lib/server/TreeSitterParser.ts").then(({ TreeSitterParser, TreeSitterParserLive }) => {
+  void import("../lib/server/server-runtime.ts").then(({ serverRuntime }) => {
+    const prewarm = Effect.serviceOption(TreeSitterParser).pipe(
+      Effect.provide(TreeSitterParserLive),
+      Effect.catchAll(() => Effect.void)
+    );
+    serverRuntime.runPromise(prewarm).then(() => {
+      console.error("[McpServer] ⚡ Pre-warmed lazy TreeSitter parser WASM engine cleanly on startup.");
+    }).catch((err) => {
+      console.error("[McpServer] ⚠️ Failed to pre-warm TreeSitter parser:", err);
+    });
+  });
+});
+
 export const app = new Elysia({
   serve: {
-    idleTimeout: 255, // Set Bun/Elysia idle timeout to maximum to prevent dropped connections on slow LLM calls
+    idleTimeout: 255, 
   }
 })
   .onBeforeHandle(({ request, set }) => {
@@ -255,10 +305,12 @@ export const app = new Elysia({
   .use(cors({
     origin: [
       /localhost.*/,
-      /127\.0\.0\.1.*/,
+      /127\.0\.0\.1.*/, // Corrected CORS loopback IP regex pattern
       /.*\.life-io\.xyz/,
       "https://life-io.xyz",
       "capacitor://localhost",
+      "tauri://localhost",
+      "tauri.localhost",
       "http://localhost",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -343,7 +395,7 @@ if (shouldRunServers) {
     app.listen({ unix: socketPath });
     console.info(`🦊 Elysia is running on UDS socket at ${socketPath}`);
   } else {
-        const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
+    const port = process.env.BACKEND_PORT ? parseInt(process.env.BACKEND_PORT) : 42069;
     app.listen({ port, hostname: "127.0.0.1" });
     console.info(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
   }

@@ -454,7 +454,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           yield* Effect.logWarning("[WorkspaceController] Lint check failures caught.");
           progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_fail" }));
         } else {
-          yield* Effect.logInfo("[WorkspaceController] Lint check passed successfully.");
+          yield* Effect.logInfo("[WorkspaceController] Log check passed successfully.");
           progressBroadcaster.emit("progress", JSON.stringify({ type: "status", status: "lint_success" }));
         }
 
@@ -632,6 +632,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         const IGNORED_NAMES = new Set([
           "node_modules",
           "dist",
+          "dev-dist",
           "build",
           "out",
           "coverage",
@@ -643,25 +644,40 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           ".vscode",
           ".venv",
           "test-results",
-          "playwright-report"
+          "playwright-report",
+          ".helix",
+          ".cache",
+          "tmp",
+          "bin",
+          "obj"
         ]);
 
-        while (queue.length > 0) {
+        let totalScanned = 0;
+        const MAX_TOTAL_SCANNED = 200; // Unconditional safeguard to prevent freezing on large codebases
+
+        while (queue.length > 0 && totalScanned < MAX_TOTAL_SCANNED) {
           const current = queue.shift();
           if (!current) continue;
 
           const { abs, rel, depth } = current;
-          if (depth > 5) continue;
+          if (depth > 3) continue; // Scan shallow (max depth 3) to keep client handshakes responsive
 
-          const files = yield* Effect.tryPromise({ 
+          // Log each subdirectory to allow high-fidelity step-by-step console debugging
+          yield* Effect.logInfo(`[WorkspaceController:listDirectories] Reading subfolder: rel="${rel || "(root)"}", abs="${abs}", depth=${depth}`);
+
+          const filesResult = yield* Effect.tryPromise({ 
             try: () => fs.readdir(abs, { withFileTypes: true }),
-            catch: (e) => new Error(`Failed to read directory ${abs}: ${String(e)}`),
-          });
+            catch: (err) => {
+              // Gracefully capture and output read locks or permission failures on standard console
+              console.error(`[WorkspaceController:listDirectories] Directory read failure on "${abs}":`, err);
+              return [];
+            }
+          }).pipe(Effect.catchAll(() => Effect.succeed([])));
 
-          for (const file of files) {
+          for (const file of filesResult) {
             if (file.isDirectory()) {
               const name = file.name;
-              if (IGNORED_NAMES.has(name) || name.startsWith(".")) {
+              if (IGNORED_NAMES.has(name) || name.startsWith(".") || name.startsWith("_")) {
                 continue;
               }
               const nextRel = rel ? `${rel}/${name}` : name;
@@ -673,10 +689,12 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
 
               dirs.push(nextRel);
               queue.push({ abs: nextAbs, rel: nextRel, depth: depth + 1 });
+              totalScanned++;
             } 
           } 
         }
 
+        yield* Effect.logInfo(`[WorkspaceController:listDirectories] Directory scanning complete. Subfolders compiled: ${dirs.length} (Scanned ${totalScanned} total iterations)`);
         dirs.sort();
         return dirs;
       }),
@@ -789,7 +807,7 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         const worktreeTxFile = path.resolve(worktreePath, ".grug-active-transaction.json");
         const worktreeStateText = yield* Effect.tryPromise({
           try: () => fs.readFile(worktreeTxFile, "utf-8").catch(() => ""),
-          catch: () => ""
+          catch: (e) => new Error(String(e))
         });
         
         let tasks: readonly PlanTask[] | undefined;
@@ -812,8 +830,6 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
           catch: (e) => new Error(`Failed to force delete worktree directory: ${String(e)}`),
         });
 
-        yield* runCommand(["git", "worktree", "prune"], cwd);
-
         // Reset the main repository's working tree to the updated branch HEAD!
         yield* runCommand(["git", "reset", "--hard", `refs/heads/${tx.ephemeralBranch}`], cwd);
 
@@ -821,6 +837,8 @@ export const makeWorkspaceController = (cwd?: string): WorkspaceController => {
         yield* updateStateFile(tx, tasks);
 
         yield* Effect.logInfo(`[WorkspaceController] Git worktree directory purged cleanly.`);
+        
+        return;
       }),
   };
 };

@@ -16,20 +16,40 @@ export const fetchWorkspaceDirectories = (cwd?: string) =>
     const responseResult = yield* mcp.callTool("list_directories", { cwd }).pipe(Effect.either);
 
     if (responseResult._tag === "Left") {
-      return yield* Effect.fail(new Error(`Failed to fetch directories: ${responseResult.left.message}`));
+      yield* clientLog("warn", `[directoryStore] Fetching workspace directories failed gracefully: ${responseResult.left.message}. Defaulting to empty list.`);
+      directoriesSignal.value = [];
+      return [];
     }
 
-        const res = responseResult.right;
+    const res = responseResult.right;
     const firstContent = res.content[0];
     const text = firstContent?.text;
     if (!text) {
-      return yield* Effect.fail(new Error("Failed to parse directories: empty response"));
+      directoriesSignal.value = [];
+      return [];
     }
 
-    const data = (JSON.parse(text) as unknown) as readonly string[];
-    directoriesSignal.value = data;
-    yield* clientLog("debug", `[directoryStore] Subdirectories hydrated: ${data.length} items`);
-    return data;
+    try {
+      // Gracefully capture common filesystem error strings from the tool execution payload
+      if (
+        text.startsWith("Error:") || 
+        text.includes("no such file or directory") || 
+        text.includes("Failed to read directory")
+      ) {
+        yield* clientLog("warn", `[directoryStore] Server returned directory access error: "${text}". Loading empty list.`);
+        directoriesSignal.value = [];
+        return [];
+      }
+
+      const data = (JSON.parse(text) as unknown) as readonly string[];
+      directoriesSignal.value = data;
+      yield* clientLog("debug", `[directoryStore] Subdirectories hydrated: ${data.length} items`);
+      return data;
+    } catch (e) {
+      yield* clientLog("error", `[directoryStore] Failed to parse directory JSON payload cleanly: ${String(e)}`, { text });
+      directoriesSignal.value = [];
+      return [];
+    }
   });
 
 export const createDirectorySelectMachine = (items: readonly string[], onSelect: (val: string) => void) => {

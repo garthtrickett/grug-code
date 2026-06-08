@@ -15,9 +15,12 @@ pub fn run() {
                 // Tauri handles cleaning up the spawned sidecar process upon exit.
                 match app_handle.shell().sidecar("grug-daemon") {
                     Ok(sidecar) => {
-                        let mut sidecar = sidecar.env("DAEMON_PORT", "42069");
+                        // Pass environment flags to disable JIT compilation, preventing SIGTRAP compiler blockages on NixOS
+                        let mut sidecar = sidecar.env("DAEMON_PORT", "42069")
+                            .env("BUN_JIT", "0")
+                            .env("JSC_useJIT", "false");
                         
-                                                // Pass the current parent workspace directory down explicitly
+                        // Pass the current parent workspace directory down explicitly
                         if let Ok(cwd) = std::env::current_dir() {
                             let mut root = cwd.clone();
                             if root.ends_with("src-tauri") {
