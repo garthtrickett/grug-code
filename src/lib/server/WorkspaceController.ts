@@ -1,7 +1,7 @@
 // File: src/lib/server/WorkspaceController.ts
 // ==============================================================================
 import { Effect } from "effect";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";

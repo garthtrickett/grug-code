@@ -83,7 +83,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     });
 
     expect(projectRes.status()).toBe(200);
-    const project = await projectRes.json();
+        const project = (await projectRes.json()) as { id: string; uses_devcontainer: boolean };
     expect(project.uses_devcontainer).toBe(true);
 
     const taskId = `e2e-devcontainer-${crypto.randomUUID().slice(0, 8)}`;
@@ -100,7 +100,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     });
 
     expect(initResponse.status()).toBe(200);
-    const tx = await initResponse.json() as any;
+        const tx = (await initResponse.json()) as { id: string; baseBranch: string; ephemeralBranch: string; checkpoints: string[] };
 
     await fs.writeFile(logFile + ".fail", "");
 
@@ -125,7 +125,7 @@ test.describe("Grug Code Dev Container Sandbox E2E", () => {
     });
 
     expect(executeResponse.status()).toBe(200);
-    const asyncRes = await executeResponse.json() as any;
+        const asyncRes = (await executeResponse.json()) as { status: string; worktreePath: string };
     expect(asyncRes.status).toBe("running");
 
     const worktreePath = asyncRes.worktreePath;
