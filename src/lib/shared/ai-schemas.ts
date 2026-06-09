@@ -5,7 +5,7 @@ export const PlanTaskSchema = z.object({
   description: z.string(),
   targetFiles: z.array(z.string()),
   status: z.enum(["pending", "running", "completed", "failed"]),
-  developerNotes: z.string().nullable(),
+  developerNotes: z.string().nullable().optional(),
 });
 
 export type PlanTask = z.infer<typeof PlanTaskSchema>;

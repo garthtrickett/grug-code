@@ -1,3 +1,5 @@
+// File: src/lib/client/stores/taskStore.ts
+// ==============================================================================
 import { signal } from "@preact/signals-core";
 import { Effect } from "effect";
 import { clientLog } from "../clientLog";
@@ -131,7 +133,7 @@ export const taskStore = {
       }
     }),
 
-    reconcileActiveTransaction: (cwd?: string) =>
+  reconcileActiveTransaction: (cwd?: string) =>
     Effect.gen(function* () {
       errorSignal.value = null;
       yield* clientLog("info", "[taskStore] Reconciling active transaction state with server...");
@@ -149,7 +151,7 @@ export const taskStore = {
       const firstContent = res.content[0];
       const text = firstContent?.text;
       
-                  let state: ReconciledState | null = null;
+      let state: ReconciledState | null = null;
       if (text) {
         try {
           state = JSON.parse(text) as ReconciledState;
@@ -212,7 +214,7 @@ export const taskStore = {
         return yield* Effect.fail(responseResult.left);
       }
 
-            const res = responseResult.right;
+      const res = responseResult.right;
       const firstContent = res.content[0];
       const text = firstContent?.text;
       if (!text) {
@@ -295,7 +297,7 @@ export const taskStore = {
         return yield* Effect.fail(responseResult.left);
       }
 
-            const res = responseResult.right;
+      const res = responseResult.right;
       const firstContent = res.content[0];
       const text = firstContent?.text;
       if (!text) {
@@ -360,6 +362,11 @@ export const taskStore = {
         }).pipe(Effect.either);
 
         if (responseResult._tag === "Left") {
+          // If transaction has been aborted or changed in the meantime, discard errors
+          const currentTx = activeTxSignal.value;
+          if (!currentTx || currentTx.id !== tx.id) {
+            return;
+          }
           errorSignal.value = responseResult.left.message;
           yield* clientLog("error", "[taskStore] execute_step MCP call failed", responseResult.left);
           tasksSignal.value = tasksSignal.value.map((t) =>
@@ -368,15 +375,27 @@ export const taskStore = {
           return yield* Effect.fail(responseResult.left);
         }
 
-                const res = responseResult.right;
+        const res = responseResult.right;
         const firstContent = res.content[0];
         const text = firstContent?.text;
         if (!text) {
+          // If transaction has been aborted or changed in the meantime, discard errors
+          const currentTx = activeTxSignal.value;
+          if (!currentTx || currentTx.id !== tx.id) {
+            return;
+          }
           errorSignal.value = "Failed to parse updated transaction data";
           tasksSignal.value = tasksSignal.value.map((t) =>
             t.id === task.id ? { ...t, status: "failed" } : t
           );
           return yield* Effect.fail(new Error("Failed to parse updated transaction data"));
+        }
+
+        // Guard against race conditions by checking that the active transaction is still the same
+        const currentTx = activeTxSignal.value;
+        if (!currentTx || currentTx.id !== tx.id) {
+          yield* clientLog("info", "[taskStore] Transaction was aborted or changed during step execution. Discarding step result.");
+          return;
         }
 
         const updatedTx = (JSON.parse(text) as unknown) as GitTransaction;
@@ -479,12 +498,19 @@ export const taskStore = {
         return yield* Effect.fail(responseResult.left);
       }
 
-            const res = responseResult.right;
+      const res = responseResult.right;
       const firstContent = res.content[0];
       const text = firstContent?.text;
       if (!text) {
         errorSignal.value = "Failed to parse rollback transaction data";
         return yield* Effect.fail(new Error("Failed to parse rollback transaction data"));
+      }
+
+      // Guard against race conditions by checking that the active transaction is still the same
+      const currentTx = activeTxSignal.value;
+      if (!currentTx || currentTx.id !== tx.id) {
+        yield* clientLog("info", "[taskStore] Transaction was aborted or changed during rollback. Discarding rollback result.");
+        return tx;
       }
 
       const updatedTx = (JSON.parse(text) as unknown) as GitTransaction;

@@ -17,7 +17,7 @@ const loadEnvUpwards = () => {
           if (eqIdx !== -1) {
             const key = trimmed.slice(0, eqIdx).trim();
             const val = trimmed.slice(eqIdx + 1).trim();
-            if (key && !process.env[key]) {
+            if (key && process.env[key] === undefined) {
               // Strip enclosing single or double quotes if present
               process.env[key] = val.replace(/^["']|["']$/g, "");
             }

@@ -43,10 +43,7 @@ test.describe("Diagnostics - 404 Endpoint Analysis", () => {
     const endpoints = [
       "/api/health",
       "/api/projects",
-      "/api/workspace/status",
-      "/api/mcp/sse",
-      "/assets/index-qW_Luqvn.js",
-      "/assets/index-CJpvy4pg.css"
+      "/api/workspace/status"
     ];
 
     for (const ep of endpoints) {

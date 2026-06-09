@@ -584,7 +584,7 @@ export const createMcpServer = () => {
           description: z.string(),
           targetFiles: z.array(z.string()),
           status: z.enum(["pending", "running", "completed", "failed"]),
-          developerNotes: z.string().nullable()
+          developerNotes: z.string().nullable().optional()
         })
       ).optional().describe("The complete list of tasks in the active plan")
     },
