@@ -1,4 +1,4 @@
-// File: ./src/lib/server/Config.ts
+// File: src/lib/server/Config.ts
 // ==============================================================================
 import * as path from "node:path";
 import * as fs from "node:fs";
@@ -18,7 +18,25 @@ const loadEnvUpwards = () => {
           const eqIdx = trimmed.indexOf("=");
           if (eqIdx !== -1) {
             const key = trimmed.slice(0, eqIdx).trim();
-            const val = trimmed.slice(eqIdx + 1).trim();
+            let val = trimmed.slice(eqIdx + 1).trim();
+            
+            // Remove trailing inline comments if present
+            let cleanVal = "";
+            let inSingleQuote = false;
+            let inDoubleQuote = false;
+            for (let i = 0; i < val.length; i++) {
+              const char = val[i];
+              if (char === "'" && !inDoubleQuote) {
+                inSingleQuote = !inSingleQuote;
+              } else if (char === '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+              } else if (char === "#" && !inSingleQuote && !inDoubleQuote) {
+                break;
+              }
+              cleanVal += char;
+            }
+            val = cleanVal.trim();
+
             if (key && process.env[key] === undefined) {
               // Strip enclosing single or double quotes if present
               process.env[key] = val.replace(/^["']|["']$/g, "");

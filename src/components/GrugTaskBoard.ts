@@ -1,3 +1,5 @@
+// File: src/components/GrugTaskBoard.ts
+// ==============================================================================
 import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { effect } from "@preact/signals-core";
@@ -44,7 +46,7 @@ export class GrugTaskBoard extends LitElement {
   private _checkedFiles = new Set<string>();
   private _description = "";
   private _provider: "gemini" | "openai" | "deepseek" = "gemini";
-    @state() private _discussionMode = false;
+  @state() private _discussionMode = false;
   @state() private _showConfig = false;
   @state() private _editProjId: string | null = null;
   @state() private _submitting = false;
@@ -116,6 +118,10 @@ export class GrugTaskBoard extends LitElement {
 
   private handleInitSubmit = (e: Event) => {
     e.preventDefault();
+    if (this._submitting) return;
+    this._submitting = true;
+    this.requestUpdate();
+
     const form = e.target as HTMLFormElement;
     this._description = (form.elements.namedItem("description") as HTMLInputElement).value;
     this._provider = (form.elements.namedItem("provider") as HTMLSelectElement).value as "gemini" | "openai" | "deepseek";
@@ -123,14 +129,21 @@ export class GrugTaskBoard extends LitElement {
     const description = this._description;
     const provider = this._provider;
     const mode = this._discussionMode ? "discussion" : "standard";
+    const self = this;
 
     runClientUnscoped(
       Effect.gen(function* () {
         yield* taskStore.researchFeature(description, cwd, selectedScopeSignal.value, provider, mode, []);
+        yield* Effect.sync(() => {
+          self._submitting = false;
+          self.requestUpdate();
+        });
       }).pipe(
-        Effect.catchAll((err) =>
-          clientLog("error", `[GrugTaskBoard] Failed to research feature: ${this.getErrorMessage(err)}`)
-        )
+        Effect.catchAll((err) => {
+          self._submitting = false;
+          self.requestUpdate();
+          return clientLog("error", `[GrugTaskBoard] Failed to research feature: ${self.getErrorMessage(err)}`);
+        })
       )
     );
   };
@@ -178,11 +191,16 @@ export class GrugTaskBoard extends LitElement {
   }
 
   private handleConfirmProposal = () => {
+    if (this._submitting) return;
+    this._submitting = true;
+    this.requestUpdate();
+
     const cwd = typeof localStorage !== "undefined" ? localStorage.getItem("grug-cwd") || undefined : undefined;
     const selectedFiles = Array.from(this._checkedFiles);
     const taskId = `${this.slugify(this._description.substring(0, 30))}-${crypto.randomUUID().slice(0, 8)}`;
     const description = this._description;
     const provider = this._provider;
+    const self = this;
 
     runClientUnscoped(
       Effect.gen(function* () {
@@ -195,10 +213,16 @@ export class GrugTaskBoard extends LitElement {
           provider,
           proposedTasksSignal.value
         );
+        yield* Effect.sync(() => {
+          self._submitting = false;
+          self.requestUpdate();
+        });
       }).pipe(
-        Effect.catchAll((err) =>
-          clientLog("error", `[GrugTaskBoard] Failed to start transaction: ${this.getErrorMessage(err)}`)
-        )
+        Effect.catchAll((err) => {
+          self._submitting = false;
+          self.requestUpdate();
+          return clientLog("error", `[GrugTaskBoard] Failed to start transaction: ${self.getErrorMessage(err)}`);
+        })
       )
     );
   };
@@ -303,10 +327,10 @@ export class GrugTaskBoard extends LitElement {
         },
       });
 
-            this._selectService = service;
+      this._selectService = service;
       service.start();
 
-            let lastState = service.state.get();
+      let lastState = service.state.get();
       service.subscribe(() => {
         const currentState = service.state.get();
         if (currentState !== lastState) {
@@ -314,7 +338,7 @@ export class GrugTaskBoard extends LitElement {
           this.requestUpdate();
         }
       });
-        } else {
+    } else {
       const collection = select.collection({
         items: itemsWithRoot,
         itemToString: (item) => item || "Whole Project Root",
@@ -354,7 +378,7 @@ export class GrugTaskBoard extends LitElement {
                 api.setOpen(true);
               }
             }}
-            class="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 text-sm focus:outline-none focus:border-zinc-650 cursor-pointer"
+            class="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 text-sm focus:outline-none focus:border-zinc-655 cursor-pointer"
           >
             <span>${selectedScopeSignal.value || "Whole Project Root"}</span>
             <span class="text-zinc-500 text-xs">▼</span>
@@ -419,10 +443,10 @@ export class GrugTaskBoard extends LitElement {
         },
       });
 
-            this._projectSelectService = service;
+      this._projectSelectService = service;
       service.start();
 
-            let lastState = service.state.get();
+      let lastState = service.state.get();
       service.subscribe(() => {
         const currentState = service.state.get();
         if (currentState !== lastState) {
@@ -430,7 +454,7 @@ export class GrugTaskBoard extends LitElement {
           this.requestUpdate();
         }
       });
-        } else {
+    } else {
       const collection = select.collection({
         items: [...projects],
         itemToString: (item) => item ? `${item.name} (${item.root_path})` : "Select Project",
@@ -469,7 +493,7 @@ export class GrugTaskBoard extends LitElement {
                   api.setOpen(true);
                 }
               }}
-              class="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 text-sm focus:outline-none focus:border-zinc-650 cursor-pointer animate-fade-in"
+              class="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 text-sm focus:outline-none focus:border-zinc-650 cursor-pointer"
             >
               <span>${activeProjectSignal.value ? `${activeProjectSignal.value.name} (${activeProjectSignal.value.root_path})` : "Select Registered Project"}</span>
               <span class="text-zinc-500 text-xs">▼</span>
@@ -661,7 +685,7 @@ export class GrugTaskBoard extends LitElement {
           </div>
         </div>
 
-                <div class="flex items-center gap-2 pt-2 border-t border-zinc-850">
+        <div class="flex items-center gap-2 pt-2 border-t border-zinc-850">
           <button
             type="submit"
             ?disabled=${this._submitting}
@@ -682,7 +706,7 @@ export class GrugTaskBoard extends LitElement {
     `;
   }
 
-    private handleProjectFormSubmit = (e: Event) => {
+  private handleProjectFormSubmit = (e: Event) => {
     e.preventDefault();
     if (this._submitting) return;
     this._submitting = true;
@@ -831,7 +855,7 @@ export class GrugTaskBoard extends LitElement {
                         type="text"
                         required
                         placeholder="Type your response or ask Grug a question..."
-                        class="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-650 text-sm"
+                        class="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-850 rounded text-zinc-100 focus:outline-none focus:border-zinc-655 text-sm"
                       />
                       <button
                         type="submit"
@@ -904,13 +928,15 @@ export class GrugTaskBoard extends LitElement {
                     <div class="flex items-center gap-4 pt-4 border-t border-zinc-900">
                       <button
                         @click=${this.handleConfirmProposal}
-                        class="flex-1 py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer"
+                        ?disabled=${this._submitting}
+                        class="flex-1 py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed"
                       >
-                        Approve & Start Task Transaction
+                        ${this._submitting ? "Starting..." : "Approve & Start Task Transaction"}
                       </button>
                       <button
                         @click=${this.handleCancelProposal}
-                        class="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-855 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer"
+                        ?disabled=${this._submitting}
+                        class="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-855 border border-zinc-800 text-zinc-300 font-semibold rounded text-sm transition-colors cursor-pointer disabled:opacity-50"
                       >
                         Cancel
                       </button>
@@ -974,10 +1000,10 @@ export class GrugTaskBoard extends LitElement {
 
                       <button 
                         type="submit" 
-                        ?disabled=${!activeProjectSignal.value}
+                        ?disabled=${!activeProjectSignal.value || this._submitting}
                         class="w-full py-2.5 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded text-sm transition-colors cursor-pointer disabled:bg-zinc-800 disabled:text-zinc-550 disabled:cursor-not-allowed"
                       >
-                        Analyze Feature & Auto-Target
+                        ${this._submitting ? "Analyzing..." : "Analyze Feature & Auto-Target"}
                       </button>
                     </form>
                   </div>
@@ -986,16 +1012,16 @@ export class GrugTaskBoard extends LitElement {
               <!-- Active Plan Queue & Checklist -->
               <div class="bg-zinc-950 border border-zinc-800 p-6 rounded-lg shadow-md space-y-6">
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
-                                  <div>
-                  <h2 class="text-lg font-bold text-white tracking-tight">Workspace Transaction: ${tx.id}</h2>
-                  <p class="text-xs text-zinc-400 mt-0.5">
-                    Base: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.baseBranch}</span> 
-                    &rarr; Ephemeral Branch: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.ephemeralBranch}</span>
-                  </p>
-                  <p class="text-[10px] text-zinc-500 mt-1">
-                    💡 To follow execution progress in your terminal, run: <span class="font-mono bg-zinc-900 px-1 py-0.5 rounded">bun run src/cli.ts logs --follow ${tx.id}</span>
-                  </p>
-                </div>
+                  <div>
+                    <h2 class="text-lg font-bold text-white tracking-tight">Workspace Transaction: ${tx.id}</h2>
+                    <p class="text-xs text-zinc-400 mt-0.5">
+                      Base: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.baseBranch}</span> 
+                      &rarr; Ephemeral Branch: <span class="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded">${tx.ephemeralBranch}</span>
+                    </p>
+                    <p class="text-[10px] text-zinc-500 mt-1">
+                      💡 To follow execution progress in your terminal, run: <span class="font-mono bg-zinc-900 px-1 py-0.5 rounded">bun run src/cli.ts logs --follow ${tx.id}</span>
+                    </p>
+                  </div>
                   <div class="flex items-center gap-2">
                     <button 
                       @click=${this.handlePauseToggle}

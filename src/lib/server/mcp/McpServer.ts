@@ -1,4 +1,5 @@
 // File: src/lib/server/mcp/McpServer.ts
+// ==============================================================================
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -17,6 +18,25 @@ import { CorrectionLoop, CorrectionLoopLive } from "../../../features/agent/Corr
 import { AiServiceLive } from "../AiService.ts";
 import { SurgicalRouterLive } from "../SurgicalRouter.ts";
 import { TokenEstimatorLive } from "../TokenEstimator.ts";
+
+// Prevent global stdout logging from corrupting standard JSON-RPC streams
+console.info = (...args: unknown[]) => {
+  console.error("[Redirected stdout]:", ...args);
+};
+
+const DaemonLive = SurgicalRouterLive.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      ProjectStructureMapperLive,
+      ResearchLoopLive,
+      AiServiceLive,
+      TreeSitterParserLive,
+      TokenEstimatorLive
+    )
+  )
+);
+
+const daemonRuntime = serverRuntime;
 
 export interface IMcpService {
   readonly start: () => Effect.Effect<void, Error>;
@@ -39,6 +59,7 @@ const gitTransactionZodShape = {
   baseBranch: z.string(),
   ephemeralBranch: z.string(),
   checkpoints: z.array(z.string()),
+  provider: z.enum(["gemini", "openai", "deepseek"]).optional(),
 };
 
 export const mcpTransports = new Map<string, SSEServerTransport>();
@@ -81,12 +102,26 @@ export const createMcpServer = () => {
     "Initialize an isolated, ephemeral Git branch for a given taskId. Verifies workspace is clean first.",
     {
       taskId: z.string().describe("The unique ID for the task transaction"),
-      cwd: z.string().optional().describe("Working directory for the workspace repository")
+      cwd: z.string().optional().describe("Working directory for the workspace repository"),
+      provider: z.enum(["gemini", "openai", "deepseek"]).optional().describe("LLM provider for this transaction"),
+      tasks: z.array(
+        z.object({
+          id: z.string(),
+          description: z.string(),
+          targetFiles: z.array(z.string()),
+          status: z.enum(["pending", "running", "completed", "failed"]),
+          developerNotes: z.string().nullable().optional()
+        })
+      ).optional().describe("The complete list of tasks in the active plan")
     },
-    async ({ taskId, cwd }) => {
+    async ({ taskId, cwd, provider, tasks }) => {
+      const mappedTasks = tasks?.map((t) => ({
+        ...t,
+        developerNotes: t.developerNotes ?? null,
+      }));
       const controller = makeWorkspaceController(cwd);
       const result = await serverRuntime.runPromise(
-        Effect.either(controller.initTransaction(taskId))
+        Effect.either(controller.initTransaction(taskId, provider, mappedTasks))
       );
       if (result._tag === "Left") {
         return {
